@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 3,
+  "id": "borderless-via-margin",
+  "name": "Borderless via overlay margin",
+  "description": "A shifted via shows how overlay consumes landed area on the metal line below.",
+  "units": "nm",
+  "grid": {
+    "width": 160,
+    "height": 120,
+    "depthSlices": 96,
+    "cellSizeNm": 2
+  },
+  "baseLayers": [
+    {
+      "id": "via-si",
+      "name": "Silicon substrate",
+      "material": "silicon",
+      "thicknessNm": 40
+    },
+    {
+      "id": "via-metal-base",
+      "name": "Copper landing layer",
+      "material": "copper",
+      "thicknessNm": 20
+    },
+    {
+      "id": "via-dielectric",
+      "name": "Interlayer dielectric",
+      "material": "low-k",
+      "thicknessNm": 100
+    }
+  ],
+  "layout": {
+    "cutPosition": 0.5,
+    "features": [
+      {
+        "id": "landing-metal",
+        "name": "Metal line below",
+        "role": "metal",
+        "visible": true,
+        "points": [
+          { "x": 0.3, "y": 0.2 },
+          { "x": 0.62, "y": 0.2 },
+          { "x": 0.62, "y": 0.8 },
+          { "x": 0.3, "y": 0.8 }
+        ]
+      },
+      {
+        "id": "borderless-via",
+        "name": "Via opening",
+        "role": "via",
+        "visible": true,
+        "points": [
+          { "x": 0.5, "y": 0.4 },
+          { "x": 0.7, "y": 0.4 },
+          { "x": 0.7, "y": 0.6 },
+          { "x": 0.5, "y": 0.6 }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "via-etch",
+      "name": "Etch shifted via",
+      "type": "etch",
+      "enabled": true,
+      "target": "low-k",
+      "depthNm": 110,
+      "selectivity": 15,
+      "ardeFactor": 0.08,
+      "mask": "layout",
+      "overlayNm": 20
+    },
+    {
+      "id": "via-fill",
+      "name": "Bottom-up copper fill",
+      "type": "deposit",
+      "enabled": true,
+      "mode": "gapfill",
+      "material": "copper",
+      "thicknessNm": 70,
+      "sidewallFactor": 0
+    },
+    {
+      "id": "via-cmp",
+      "name": "Copper CMP",
+      "type": "planarize",
+      "enabled": true,
+      "targetHeightNm": 160
+    }
+  ],
+  "createdAt": "2026-08-22T00:00:00.000Z",
+  "updatedAt": "2026-08-22T00:00:00.000Z"
+}

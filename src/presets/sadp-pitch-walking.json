@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 3,
+  "id": "sadp-pitch-walking",
+  "name": "SADP pitch walking",
+  "description": "Spacer lines form at both mandrel edges while an alternating edge displacement makes adjacent pitches unequal.",
+  "units": "nm",
+  "grid": {
+    "width": 200,
+    "height": 100,
+    "depthSlices": 96,
+    "cellSizeNm": 2
+  },
+  "baseLayers": [
+    {
+      "id": "sadp-si",
+      "name": "Silicon substrate",
+      "material": "silicon",
+      "thicknessNm": 80
+    },
+    {
+      "id": "sadp-oxide",
+      "name": "Oxide hardmask",
+      "material": "silicon-dioxide",
+      "thicknessNm": 20
+    }
+  ],
+  "layout": {
+    "cutPosition": 0.5,
+    "features": [
+      {
+        "id": "mandrel-1",
+        "name": "Mandrel 1",
+        "role": "mandrel",
+        "visible": true,
+        "points": [
+          { "x": 0.06, "y": 0.1 }, { "x": 0.14, "y": 0.1 },
+          { "x": 0.14, "y": 0.9 }, { "x": 0.06, "y": 0.9 }
+        ]
+      },
+      {
+        "id": "mandrel-2",
+        "name": "Mandrel 2",
+        "role": "mandrel",
+        "visible": true,
+        "points": [
+          { "x": 0.26, "y": 0.1 }, { "x": 0.34, "y": 0.1 },
+          { "x": 0.34, "y": 0.9 }, { "x": 0.26, "y": 0.9 }
+        ]
+      },
+      {
+        "id": "mandrel-3",
+        "name": "Mandrel 3",
+        "role": "mandrel",
+        "visible": true,
+        "points": [
+          { "x": 0.46, "y": 0.1 }, { "x": 0.54, "y": 0.1 },
+          { "x": 0.54, "y": 0.9 }, { "x": 0.46, "y": 0.9 }
+        ]
+      },
+      {
+        "id": "mandrel-4",
+        "name": "Mandrel 4",
+        "role": "mandrel",
+        "visible": true,
+        "points": [
+          { "x": 0.66, "y": 0.1 }, { "x": 0.74, "y": 0.1 },
+          { "x": 0.74, "y": 0.9 }, { "x": 0.66, "y": 0.9 }
+        ]
+      },
+      {
+        "id": "mandrel-5",
+        "name": "Mandrel 5",
+        "role": "mandrel",
+        "visible": true,
+        "points": [
+          { "x": 0.86, "y": 0.1 }, { "x": 0.94, "y": 0.1 },
+          { "x": 0.94, "y": 0.9 }, { "x": 0.86, "y": 0.9 }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "sadp-spacer",
+      "name": "Form spacer lines",
+      "type": "sadp",
+      "enabled": true,
+      "spacerMaterial": "spacer",
+      "mandrelPitchNm": 80,
+      "mandrelWidthNm": 32,
+      "spacerThicknessNm": 8,
+      "spacerHeightNm": 60,
+      "pitchWalkNm": 4
+    }
+  ],
+  "createdAt": "2026-08-22T00:00:00.000Z",
+  "updatedAt": "2026-08-22T00:00:00.000Z"
+}

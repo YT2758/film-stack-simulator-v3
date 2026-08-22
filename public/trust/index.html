@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src &#39;self&#39;; connect-src &#39;none&#39;; img-src &#39;self&#39; data:; font-src &#39;self&#39;; style-src &#39;self&#39;; script-src &#39;none&#39;; worker-src &#39;none&#39;; object-src &#39;none&#39;; base-uri &#39;self&#39;; form-action &#39;none&#39;; frame-ancestors &#39;none&#39;">
+    <meta name="referrer" content="no-referrer">
+    <meta name="robots" content="index,follow,max-image-preview:large">
+    <meta name="theme-color" content="#07110f">
+    <title>How the browser-only guarantee works</title>
+    <meta name="description" content="Verify how Film Stack Simulator keeps process geometry in your browser, inspect its runtime dependencies, and audit network activity yourself.">
+    <link rel="canonical" href="https://example.com/trust/">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Film Stack Simulator">
+    <meta property="og:title" content="How the browser-only guarantee works">
+    <meta property="og:description" content="Verify how Film Stack Simulator keeps process geometry in your browser, inspect its runtime dependencies, and audit network activity yourself.">
+    <meta property="og:url" content="https://example.com/trust/">
+    <meta name="twitter:card" content="summary">
+    <link rel="stylesheet" href="/content.css">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"How the browser-only guarantee works","description":"Verify how Film Stack Simulator keeps process geometry in your browser, inspect its runtime dependencies, and audit network activity yourself.","dateModified":"2026-08-22","url":"https://example.com/trust/"}</script>
+  </head>
+  <body>
+    <header><nav class="site-nav" aria-label="Primary">
+    <a class="brand" href="/">Film Stack Simulator</a>
+    <span class="nav-links">
+      <a href="/case-studies/">Case studies</a>
+      <a href="/trust/">Trust &amp; verification</a>
+      <a href="https://github.com/YT2758/film-stack-simulator-v3" rel="noopener noreferrer">Source</a>
+    </span>
+  </nav></header>
+    <main class="page-shell">
+    <article class="technical-article trust-article">
+      <header class="article-header">
+        <p class="eyebrow">Trust is verifiable</p>
+        <h1>How the browser-only guarantee works</h1>
+        <p class="dek">Verify how Film Stack Simulator keeps process geometry in your browser, inspect its runtime dependencies, and audit network activity yourself.</p>
+      </header>
+      <div class="article-body"><h2>What “browser-only” means</h2>
+<p>Film Stack Simulator has no application back end, account service, telemetry endpoint, or cloud-save API. Cloudflare Pages serves static files. The browser performs the geometry calculations and stores saved stacks locally. Export creates a local download initiated by the user.</p>
+<p>The guarantee applies to the simulator at <code>/</code>: after its same-origin static files load, running a flow, saving locally, and exporting must not create another network request. A manually submitted newsletter form may exist on case-study pages only when its owner has configured an action; it is never included in the simulator.</p>
+<h2>Runtime dependencies</h2>
+<p>The list below is generated at build time from the <code>dependencies</code> object in <code>package.json</code>; it is not a hand-maintained marketing list.</p>
+<ul class="dependency-list">
+  <li data-runtime-dependency="@fontsource-variable/ibm-plex-sans"><code>@fontsource-variable/ibm-plex-sans</code> <span>^5.3.0</span><small>Self-hosted IBM Plex Sans font asset</small></li>
+  <li data-runtime-dependency="pako"><code>pako</code> <span>^3.0.1</span><small>Local URL-state compression and decompression</small></li>
+  <li data-runtime-dependency="react"><code>react</code> <span>^19.2.8</span><small>Simulator user-interface rendering</small></li>
+  <li data-runtime-dependency="react-dom"><code>react-dom</code> <span>^19.2.8</span><small>React browser DOM integration</small></li>
+  <li data-runtime-dependency="three"><code>three</code> <span>^0.185.1</span><small>Client-side 3D presentation</small></li>
+</ul><p>Build and test tools under <code>devDependencies</code> do not ship as browser runtime dependencies. The IBM Plex Sans font file used by these static pages is copied from the declared Fontsource package and served from this site&#39;s own origin.</p>
+<h2>Verify it yourself in DevTools</h2>
+<ol>
+<li>Open the simulator at <code>/</code> in a private window with browser extensions disabled.</li>
+<li>Open Developer Tools, choose <strong>Network</strong>, enable <strong>Preserve log</strong>, and enable <strong>Disable cache</strong> while DevTools is open.</li>
+<li>Reload the page, then open the 3D view once so its lazily loaded JavaScript and worker are fetched. Initial HTML, JavaScript, CSS, worker, and font requests should all have the site&#39;s own origin. Inspect the document response headers too: <code>Speculation-Rules</code> must be absent.</li>
+<li>Clear the Network list without reloading. Run a complete flow, change parameters, save it locally, switch between the now-loaded views, and export JSON.</li>
+<li>The list should remain empty. If it does not, inspect the <strong>Domain</strong>, <strong>Initiator</strong>, and request URL. A browser extension is not site code, but any request initiated by the simulator is a failed zero-egress check.</li>
+<li>Repeat against the deployed production URL because an edge platform can modify HTML after the repository build.</li>
+</ol>
+<p>The repository can be inspected independently: <a href="https://github.com/YT2758/film-stack-simulator-v3" rel="noopener noreferrer">open the configured source repository</a></p>
+<h2>Cloudflare features that must stay off</h2>
+<p>Cloudflare can inject or rewrite client resources after deployment. Keep all of the following disabled for the simulator hostname, then repeat the production Network test:</p>
+<ul>
+<li><strong>Pages Web Analytics / Browser Insights.</strong> Pages one-click Web Analytics automatically inserts a JavaScript beacon. <a href="https://developers.cloudflare.com/pages/how-to/web-analytics/">Cloudflare Pages documentation</a></li>
+<li><strong>Zaraz auto-injection.</strong> Zaraz can insert <code>/cdn-cgi/zaraz/i.js</code> even when it is absent from the repository output. <a href="https://developers.cloudflare.com/zaraz/advanced/load-zaraz-manually/">Cloudflare Zaraz documentation</a></li>
+<li><strong>Speed Brain.</strong> It is enabled by default and adds a <code>Speculation-Rules</code> response header that can make the browser prefetch a likely navigation. <a href="https://developers.cloudflare.com/speed/optimization/content/speed-brain/">Cloudflare Speed Brain documentation</a></li>
+<li><strong>Prefetch URLs.</strong> Enterprise URL prefetching must remain off even though it requires additional configuration before it acts. <a href="https://developers.cloudflare.com/speed/optimization/content/prefetch-urls/">Cloudflare Prefetch URLs documentation</a></li>
+<li><strong>Bot Management JavaScript Detections / Bot Fight Mode injection.</strong> JavaScript Detections inserts a script into HTML and issues a <code>cf_clearance</code> cookie; do not enable it on this hostname. <a href="https://developers.cloudflare.com/cloudflare-challenges/challenge-types/javascript-detections/">Cloudflare JavaScript Detections documentation</a></li>
+<li><strong>Rocket Loader.</strong> It rewrites JavaScript loading and requires script execution outside this build&#39;s trust boundary. <a href="https://developers.cloudflare.com/speed/optimization/content/rocket-loader/">Cloudflare Rocket Loader documentation</a></li>
+<li><strong>Email Address Obfuscation.</strong> It injects <code>email-decode.min.js</code> into HTML containing email addresses. <a href="https://developers.cloudflare.com/waf/tools/scrape-shield/email-address-obfuscation/">Cloudflare Email Address Obfuscation documentation</a></li>
+<li><strong>Cloudflare Fonts.</strong> It rewrites HTML and font URLs; this project instead emits its own same-origin WOFF2 asset. <a href="https://developers.cloudflare.com/speed/optimization/content/fonts/">Cloudflare Fonts documentation</a></li>
+</ul>
+<p>Ordinary Cloudflare caching and transport compression do not add browser destinations. The interlock is observable behavior: if a platform setting, dependency, or future feature causes a new request, disable it or remove the zero-egress claim before release.</p>
+</div>
+    </article>
+  </main>
+    <footer class="site-footer">
+      <p>Educational geometry simulator · browser-only processing · no ads or tracking</p>
+      <p><a href="/trust/">Verify the zero-egress claim</a></p>
+    </footer>
+  </body>
+</html>

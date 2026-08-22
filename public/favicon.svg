@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Film Stack Simulator">
+  <rect width="64" height="64" rx="14" fill="#07110f"/>
+  <path d="M13 43h38v8H13z" fill="#38d3a5"/>
+  <path d="M17 30h30v9H17z" fill="#d2aa55"/>
+  <path d="M22 17h20v9H22z" fill="#e8efe9"/>
+</svg>

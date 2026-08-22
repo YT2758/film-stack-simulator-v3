@@ -1,0 +1,41 @@
+{
+  "name": "film-stack-simulator",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npm run content:build && vite",
+    "build": "npm run content:build && tsc -b && vite build && npm run audit:egress",
+    "preview": "vite preview",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:content": "node scripts/verify-content.mjs",
+    "test:egress": "node scripts/run-egress.mjs",
+    "audit:egress": "node scripts/audit-egress.mjs",
+    "content:build": "node scripts/build-content.mjs",
+    "cf:dev": "npm run build && wrangler pages dev dist",
+    "cf:deploy": "CF_PAGES=1 npm run build && wrangler pages deploy dist"
+  },
+  "dependencies": {
+    "@fontsource-variable/ibm-plex-sans": "^5.3.0",
+    "pako": "^3.0.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^26.2.0",
+    "@types/pako": "^3.0.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@types/three": "^0.185.4",
+    "@vitejs/plugin-react": "^6.1.0",
+    "marked": "^18.0.10",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.0.0"
+  }
+}

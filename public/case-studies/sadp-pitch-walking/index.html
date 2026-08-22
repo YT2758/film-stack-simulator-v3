@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src &#39;self&#39;; connect-src &#39;none&#39;; img-src &#39;self&#39; data:; font-src &#39;self&#39;; style-src &#39;self&#39;; script-src &#39;none&#39;; worker-src &#39;none&#39;; object-src &#39;none&#39;; base-uri &#39;self&#39;; form-action &#39;none&#39;; frame-ancestors &#39;none&#39;">
+    <meta name="referrer" content="no-referrer">
+    <meta name="robots" content="index,follow,max-image-preview:large">
+    <meta name="theme-color" content="#07110f">
+    <title>SADP Pitch Walking: Where Alternating Spacing Begins</title>
+    <meta name="description" content="Trace SADP pitch walking from mandrel and spacer asymmetry to alternating space populations, then inspect the geometry in a browser-only preset.">
+    <link rel="canonical" href="https://example.com/case-studies/sadp-pitch-walking/">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Film Stack Simulator">
+    <meta property="og:title" content="SADP Pitch Walking: Where Alternating Spacing Begins">
+    <meta property="og:description" content="Trace SADP pitch walking from mandrel and spacer asymmetry to alternating space populations, then inspect the geometry in a browser-only preset.">
+    <meta property="og:url" content="https://example.com/case-studies/sadp-pitch-walking/">
+    <meta name="twitter:card" content="summary">
+    <link rel="stylesheet" href="/content.css">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"SADP Pitch Walking: Where Alternating Spacing Begins","description":"Trace SADP pitch walking from mandrel and spacer asymmetry to alternating space populations, then inspect the geometry in a browser-only preset.","datePublished":"2026-08-22","dateModified":"2026-08-22","mainEntityOfPage":"https://example.com/case-studies/sadp-pitch-walking/","url":"https://example.com/case-studies/sadp-pitch-walking/","isAccessibleForFree":true,"about":["SADP pitch walking","spacer double patterning","mandrel CD","edge placement error"]}</script>
+  </head>
+  <body>
+    <header><nav class="site-nav" aria-label="Primary">
+    <a class="brand" href="/">Film Stack Simulator</a>
+    <span class="nav-links">
+      <a href="/case-studies/">Case studies</a>
+      <a href="/trust/">Trust &amp; verification</a>
+      <a href="https://github.com/YT2758/film-stack-simulator-v3" rel="noopener noreferrer">Source</a>
+    </span>
+  </nav></header>
+    <main class="page-shell">
+    <article class="technical-article">
+      <header class="article-header">
+        <p class="eyebrow">Case study</p>
+        <h1>SADP Pitch Walking: Where Alternating Spacing Begins</h1>
+        <p class="dek">Trace SADP pitch walking from mandrel and spacer asymmetry to alternating space populations, then inspect the geometry in a browser-only preset.</p>
+        <p class="byline">Educational case study · Updated <time datetime="2026-08-22">2026-08-22</time></p>
+      </header>
+      <div class="article-body"><h2>1. Phenomenon and consequence</h2>
+<p>Self-aligned double patterning (SADP) uses sidewall spacers around a lower-density mandrel pattern to create twice as many lines. In the ideal one-dimensional construction, spacer thickness and mandrel geometry are symmetric, and the resulting line centers are evenly spaced. <strong>Pitch walking</strong> appears when successive gaps alternate between two populations instead of repeating at one pitch.</p>
+<p>The cadence matters even when the average pitch looks correct. A downstream cut or transfer step sees local edges, not just the array average, so an alternating displacement consumes edge-placement margin in opposite directions on adjacent features. Mandrel critical dimension, mandrel placement and profile, spacer deposition, and spacer etch can all contribute; pitch walking should not be assigned to lithographic overlay alone.</p>
+<blockquote>
+<p><strong>Educational scope.</strong> This article and preset explain a deliberately simplified geometry model using generalized dimensions. They do not reproduce a qualified process, predict yield, or replace CD/overlay metrology and process-window experiments. No claim of first-hand production results is made.</p>
+</blockquote>
+<h2>2. Mechanism in the simulator</h2>
+<p>The top-down mandrel polygons are authoritative geometry. At the selected cut Y, the 2D engine finds each sampled mandrel edge, places a spacer line beside it using the selected spacer thickness, and moves each left/right pair outward by the explicit <code>pitch walk</code> value. Outside the polygons&#39; Y extent there is no spacer, so the worker-generated 3D view terminates the lines at the same layout boundary. Changing numeric mandrel pitch or width regenerates the preset&#39;s periodic polygons; manually dragged vertices remain authoritative until one of those two controls is changed again. Pitch walk is still a user-chosen geometry perturbation, not a result derived from deposition or etch chemistry.</p>
+<p>For an idealized mandrel pitch <code>P</code>, mandrel width <code>M</code>, and spacer thickness <code>S</code>, the two spaces are governed by different parts of the construction: one inherits the former mandrel region, while the next inherits the region between adjacent mandrels after both spacers are present. A change in <code>M</code> moves those two space populations in opposite directions. A change or asymmetry in <code>S</code> changes spacer-line width and the adjacent spaces. The preset makes this alternating signature visible without claiming a unique physical root cause.</p>
+<p>Use three comparisons:</p>
+<table>
+<thead>
+<tr>
+<th>Comparison</th>
+<th>Hold fixed</th>
+<th>Inspect</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>pitch walk = 0</code> vs preset value</td>
+<td>Pitch, mandrel width, spacer dimensions</td>
+<td>Whether line-center spacing changes from one population to two.</td>
+</tr>
+<tr>
+<td>Mandrel width − small / nominal / large</td>
+<td>Pitch and spacer dimensions</td>
+<td>Opposite movement of the two gap populations.</td>
+</tr>
+<tr>
+<td>Spacer thickness − small / nominal / large</td>
+<td>Mandrel geometry</td>
+<td>Coupled change in spacer CD and free-space width.</td>
+</tr>
+</tbody></table>
+<h2>3. Open this case in the simulator</h2>
+<p><a href="/?preset=sadp-pitch-walking">Open the SADP pitch-walking case in the simulator →</a></p>
+<p>Compare the saved spacer result with <code>pitch walk = 0</code> for the symmetric control. Then change one geometry input at a time. Dragging a mandrel vertex changes the sampled edge directly; changing numeric pitch or width rebuilds a periodic rectangular mandrel array while preserving its current Y extent.</p>
+<h2>4. Further reading</h2>
+<p>These primary conference papers demonstrate spacer-defined patterning and quantify how sacrificial-pattern and unit-process variation produce multiple spacing populations:</p>
+<ol>
+<li>C. Bencher, Y. Chen, H. Dai, W. Montgomery, and L. Huli, “22 nm half-pitch patterning by CVD spacer self alignment double patterning (SADP),” <em>Proceedings of SPIE</em> 6924, 69244E (2008). <a href="https://doi.org/10.1117/12.772953">https://doi.org/10.1117/12.772953</a></li>
+<li>W. H. Arnold, “Towards 3nm overlay and critical dimension uniformity: an integrated error budget for double patterning lithography,” <em>Proceedings of SPIE</em> 6924, 692404 (2008). <a href="https://doi.org/10.1117/12.782311">https://doi.org/10.1117/12.782311</a></li>
+<li>M. J. Maslow et al., “Co-optimization of exposure dose and etch process for SAQP pitch walk control,” <em>Proceedings of SPIE</em> 10587, 1058704 (2018). <a href="https://doi.org/10.1117/12.2297345">https://doi.org/10.1117/12.2297345</a></li>
+</ol>
+</div>
+    </article>
+    <aside class="newsletter" aria-labelledby="newsletter-title">
+      <p class="eyebrow">Case-study updates</p>
+      <h2 id="newsletter-title">Email updates are unavailable</h2>
+      <p>No newsletter endpoint has been configured for this build. No email field or inactive form is shown.</p>
+    </aside>
+  </main>
+    <footer class="site-footer">
+      <p>Educational geometry simulator · browser-only processing · no ads or tracking</p>
+      <p><a href="/trust/">Verify the zero-egress claim</a></p>
+    </footer>
+  </body>
+</html>

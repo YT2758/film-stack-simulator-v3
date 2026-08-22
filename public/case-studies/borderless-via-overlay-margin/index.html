@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src &#39;self&#39;; connect-src &#39;none&#39;; img-src &#39;self&#39; data:; font-src &#39;self&#39;; style-src &#39;self&#39;; script-src &#39;none&#39;; worker-src &#39;none&#39;; object-src &#39;none&#39;; base-uri &#39;self&#39;; form-action &#39;none&#39;; frame-ancestors &#39;none&#39;">
+    <meta name="referrer" content="no-referrer">
+    <meta name="robots" content="index,follow,max-image-preview:large">
+    <meta name="theme-color" content="#07110f">
+    <title>Borderless Via Overlay Margin: A Landed-Area Guide</title>
+    <meta name="description" content="See how via-to-metal offset reduces landed area, distinguish geometry margin from reliability, and test a borderless-via preset locally in your browser.">
+    <link rel="canonical" href="https://example.com/case-studies/borderless-via-overlay-margin/">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Film Stack Simulator">
+    <meta property="og:title" content="Borderless Via Overlay Margin: A Landed-Area Guide">
+    <meta property="og:description" content="See how via-to-metal offset reduces landed area, distinguish geometry margin from reliability, and test a borderless-via preset locally in your browser.">
+    <meta property="og:url" content="https://example.com/case-studies/borderless-via-overlay-margin/">
+    <meta name="twitter:card" content="summary">
+    <link rel="stylesheet" href="/content.css">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Borderless Via Overlay Margin: A Landed-Area Guide","description":"See how via-to-metal offset reduces landed area, distinguish geometry margin from reliability, and test a borderless-via preset locally in your browser.","datePublished":"2026-08-22","dateModified":"2026-08-22","mainEntityOfPage":"https://example.com/case-studies/borderless-via-overlay-margin/","url":"https://example.com/case-studies/borderless-via-overlay-margin/","isAccessibleForFree":true,"about":["borderless via","overlay margin","landed area","via misalignment"]}</script>
+  </head>
+  <body>
+    <header><nav class="site-nav" aria-label="Primary">
+    <a class="brand" href="/">Film Stack Simulator</a>
+    <span class="nav-links">
+      <a href="/case-studies/">Case studies</a>
+      <a href="/trust/">Trust &amp; verification</a>
+      <a href="https://github.com/YT2758/film-stack-simulator-v3" rel="noopener noreferrer">Source</a>
+    </span>
+  </nav></header>
+    <main class="page-shell">
+    <article class="technical-article">
+      <header class="article-header">
+        <p class="eyebrow">Case study</p>
+        <h1>Borderless Via Overlay Margin: A Landed-Area Guide</h1>
+        <p class="dek">See how via-to-metal offset reduces landed area, distinguish geometry margin from reliability, and test a borderless-via preset locally in your browser.</p>
+        <p class="byline">Educational case study · Updated <time datetime="2026-08-22">2026-08-22</time></p>
+      </header>
+      <div class="article-body"><h2>1. Phenomenon and consequence</h2>
+<p>A bordered via is drawn with metal enclosure around its nominal footprint. That enclosure can absorb some via-to-metal displacement before any part of the via extends beyond the underlying conductor. A <strong>borderless via</strong> removes some or all of that geometric border to save area, so overlay and critical-dimension variation act directly on the landed footprint.</p>
+<p>Once the via is partly unlanded, the via opening intersects both metal and surrounding dielectric. The metal intersection area decreases, and the exposed edge can alter etch, clean, barrier, fill, resistance, and reliability behavior. Those outcomes are process-specific. A geometric landed-area percentage is a useful first screen, but it is not a resistance model, an electromigration lifetime, or a yield prediction.</p>
+<blockquote>
+<p><strong>Educational scope.</strong> This article and preset explain a deliberately simplified two-dimensional overlap model using generalized dimensions. They do not establish a design rule, allowable overlay budget, or qualified process window, and they do not replace electrical and reliability data. No claim of first-hand production results is made.</p>
+</blockquote>
+<h2>2. Mechanism in the simulator</h2>
+<p>The preset overlays a via footprint on an underlying metal feature and moves the via laterally. The sampled metal polygon also shapes the starting copper layer: outside the line footprint that thickness is dielectric. The authoritative 2D cut therefore shows the same partial landing that is extruded across layout Y in 3D. At every offset, the simulator counts the top-down cells shared by the via and metal, then reports:</p>
+<p><code>landed area (%) = shared via/metal cells ÷ total via-footprint cells × 100</code></p>
+<p>In a one-dimensional rectangular check, a line of width <code>W</code> and via of width <code>V</code> has full-landing margin <code>(W − V) / 2</code> on each side when both are centered and <code>W ≥ V</code>. Beyond that offset, overlap starts to fall. The grid calculation generalizes the same idea to the preset&#39;s discrete footprint and reports the actual sampled intersection.</p>
+<p>The preset intentionally does not begin from a centered control. Its metal spans 30–62% of the layout width (center 46%), while the nominal via spans 50–70% (center 60%); the saved etch step then adds a <code>+20 nm</code> shift. On the 320 nm-wide grid, aligning those polygon centers requires an offset of about <code>−45 nm</code>. Compare the geometry in this order:</p>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th align="right">Offset</th>
+<th>Interpretation</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Preset state</td>
+<td align="right">+20 nm</td>
+<td>Deliberately shifted, partly landed case.</td>
+</tr>
+<tr>
+<td>Nominal zero</td>
+<td align="right">0 nm</td>
+<td>Removes the explicit etch offset, but the drawn polygons remain off-center.</td>
+</tr>
+<tr>
+<td>Geometry-centered control</td>
+<td align="right">About −45 nm</td>
+<td>Aligns the polygon centers; the sampled maximum is grid-dependent.</td>
+</tr>
+</tbody></table>
+<p>Grid resolution, sidewall taper, CD bias, liner thickness, corner rounding, and two-axis overlay distributions can change a real result. Treat the displayed percentage as a transparent geometry metric, not as a safe/unsafe threshold.</p>
+<h2>3. Open this case in the simulator</h2>
+<p><a href="/?preset=borderless-via-margin">Open the borderless-via margin case in the simulator →</a></p>
+<p>Open the saved <code>+20 nm</code> case, set <code>overlay</code> to zero, then sweep toward about <code>−45 nm</code> to locate the maximum landed area on the 2 nm raster. Keep the via and metal widths fixed during that comparison; after establishing the geometry-centered control, sweep in both directions to find the full-landing boundaries.</p>
+<h2>4. Further reading</h2>
+<p>The following primary studies connect borderless-via/contact geometry and misalignment with measured resistance or reliability behavior:</p>
+<ol>
+<li>Y.-S. Jung et al., “Enhancing uniformity of borderless via resistance by HDP oxide technology,” <em>Proceedings of the 6th International Conference on VLSI and CAD</em>, 452–455 (1999). <a href="https://doi.org/10.1109/ICVC.1999.820962">https://doi.org/10.1109/ICVC.1999.820962</a></li>
+<li>J. S. Huang, A. S. Oates, S. H. Kang, T. L. Shofner, R. A. Ashton, and Y. S. Obeng, “Comparative study on the effect of misalignment on bordered and borderless contacts,” <em>Journal of Electronic Materials</em> 30, 360–366 (2001). <a href="https://doi.org/10.1007/s11664-001-0044-9">https://doi.org/10.1007/s11664-001-0044-9</a></li>
+<li>C. K. Chen, P. C. Yu, M. H. Lee, C. N. Wu, and H. Matsuo, “Borderless via clean study for minimizing Al-Cu loss in 58 nm flash devices,” <em>Solid State Phenomena</em> 145–146, 357–360 (2009). <a href="https://doi.org/10.4028/www.scientific.net/SSP.145-146.357">https://doi.org/10.4028/www.scientific.net/SSP.145-146.357</a></li>
+</ol>
+</div>
+    </article>
+    <aside class="newsletter" aria-labelledby="newsletter-title">
+      <p class="eyebrow">Case-study updates</p>
+      <h2 id="newsletter-title">Email updates are unavailable</h2>
+      <p>No newsletter endpoint has been configured for this build. No email field or inactive form is shown.</p>
+    </aside>
+  </main>
+    <footer class="site-footer">
+      <p>Educational geometry simulator · browser-only processing · no ads or tracking</p>
+      <p><a href="/trust/">Verify the zero-egress claim</a></p>
+    </footer>
+  </body>
+</html>

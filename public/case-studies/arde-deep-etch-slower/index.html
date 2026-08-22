@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src &#39;self&#39;; connect-src &#39;none&#39;; img-src &#39;self&#39; data:; font-src &#39;self&#39;; style-src &#39;self&#39;; script-src &#39;none&#39;; worker-src &#39;none&#39;; object-src &#39;none&#39;; base-uri &#39;self&#39;; form-action &#39;none&#39;; frame-ancestors &#39;none&#39;">
+    <meta name="referrer" content="no-referrer">
+    <meta name="robots" content="index,follow,max-image-preview:large">
+    <meta name="theme-color" content="#07110f">
+    <title>Why Deep Openings Etch Slower: An ARDE Geometry Guide</title>
+    <meta name="description" content="See how aspect ratio can slow feature-scale plasma etching, compare transport-limited openings, and launch an educational ARDE preset in your browser.">
+    <link rel="canonical" href="https://example.com/case-studies/arde-deep-etch-slower/">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="Film Stack Simulator">
+    <meta property="og:title" content="Why Deep Openings Etch Slower: An ARDE Geometry Guide">
+    <meta property="og:description" content="See how aspect ratio can slow feature-scale plasma etching, compare transport-limited openings, and launch an educational ARDE preset in your browser.">
+    <meta property="og:url" content="https://example.com/case-studies/arde-deep-etch-slower/">
+    <meta name="twitter:card" content="summary">
+    <link rel="stylesheet" href="/content.css">
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Why Deep Openings Etch Slower: An ARDE Geometry Guide","description":"See how aspect ratio can slow feature-scale plasma etching, compare transport-limited openings, and launch an educational ARDE preset in your browser.","datePublished":"2026-08-22","dateModified":"2026-08-22","mainEntityOfPage":"https://example.com/case-studies/arde-deep-etch-slower/","url":"https://example.com/case-studies/arde-deep-etch-slower/","isAccessibleForFree":true,"about":["aspect-ratio-dependent etching","ARDE","RIE lag","plasma etch"]}</script>
+  </head>
+  <body>
+    <header><nav class="site-nav" aria-label="Primary">
+    <a class="brand" href="/">Film Stack Simulator</a>
+    <span class="nav-links">
+      <a href="/case-studies/">Case studies</a>
+      <a href="/trust/">Trust &amp; verification</a>
+      <a href="https://github.com/YT2758/film-stack-simulator-v3" rel="noopener noreferrer">Source</a>
+    </span>
+  </nav></header>
+    <main class="page-shell">
+    <article class="technical-article">
+      <header class="article-header">
+        <p class="eyebrow">Case study</p>
+        <h1>Why Deep Openings Etch Slower: An ARDE Geometry Guide</h1>
+        <p class="dek">See how aspect ratio can slow feature-scale plasma etching, compare transport-limited openings, and launch an educational ARDE preset in your browser.</p>
+        <p class="byline">Educational case study · Updated <time datetime="2026-08-22">2026-08-22</time></p>
+      </header>
+      <div class="article-body"><h2>1. Phenomenon and consequence</h2>
+<p>Two openings can start at the same top surface and receive the same nominal etch step, yet the deeper or narrower opening may advance less. The useful geometric variable is aspect ratio: etch depth divided by opening width. When the feature-scale removal rate changes with that ratio, the result is called <strong>aspect-ratio-dependent etching (ARDE)</strong>. A slower high-aspect-ratio feature is often described as normal RIE lag.</p>
+<p>The practical consequence is a coupled clear-versus-overetch problem. A step long enough to clear a narrow opening may expose a stop layer beneath a wider opening for longer. If the step is shortened to protect that stop layer, the narrow opening may remain partially closed. Real plasma processes can combine neutral transport, ion transport, charging, inhibitor deposition, surface reaction, and product removal; aspect ratio alone does not identify which contribution dominates.</p>
+<blockquote>
+<p><strong>Educational scope.</strong> This article and preset explain a deliberately simplified geometry model using generalized dimensions. They do not reproduce a qualified process, predict electrical performance, or replace wafer data, metrology, or commercial process simulation. No claim of first-hand production results is made.</p>
+</blockquote>
+<h2>2. Mechanism in the simulator</h2>
+<p>The preset places openings of different widths in the same cross-section. For its etch step, the simulator forms a nominal aspect ratio from requested etch depth divided by each opening width. The narrower opening therefore receives the larger ratio. With the dimensionless ARDE factor enabled, its target-removal budget is divided by <code>1 + ARDE factor × nominal aspect ratio</code>, so the narrow feature lags the wide one.</p>
+<p>Read the result as a controlled geometry comparison, not as a plasma model:</p>
+<table>
+<thead>
+<tr>
+<th>View</th>
+<th>What to compare</th>
+<th>What it means in this model</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Before-etch snapshot</td>
+<td>Opening width at the same starting height</td>
+<td>The only intended difference is access geometry.</td>
+</tr>
+<tr>
+<td>ARDE-on result</td>
+<td>Bottom position in wide and narrow openings</td>
+<td>The nominal aspect-ratio rule assigns different removal budgets.</td>
+</tr>
+<tr>
+<td>ARDE-off control</td>
+<td>Remaining target thickness in both openings</td>
+<td>A zero factor removes this illustrative source of lag; this preset still does not reach the underlying layer.</td>
+</tr>
+</tbody></table>
+<p>Set the ARDE factor to zero and replay to form the control. Both features then use the same geometric depth rule. Increasing the factor strengthens the illustrative lag; it does <strong>not</strong> select a gas chemistry or calculate an etch rate.</p>
+<h2>3. Open this case in the simulator</h2>
+<p><a href="/?preset=arde-demo">Open the ARDE comparison in the simulator →</a></p>
+<p>The simulator runs locally in the browser. Replay the flow, then compare the preset against <code>ARDE factor = 0</code> while leaving the layout and nominal etch depth unchanged.</p>
+<h2>4. Further reading</h2>
+<p>The following primary papers establish transport-based interpretations of high-aspect-ratio etching and compare ARDE models with experiment:</p>
+<ol>
+<li>J. W. Coburn and H. F. Winters, “Conductance considerations in the reactive ion etching of high aspect ratio features,” <em>Applied Physics Letters</em> 55, 2730–2732 (1989). <a href="https://doi.org/10.1063/1.101937">https://doi.org/10.1063/1.101937</a></li>
+<li>R. J. Xie, J. D. Kava, and M. Siegel, “Aspect ratio dependent etching on metal etch: Modeling and experiment,” <em>Journal of Vacuum Science &amp; Technology A</em> 14, 1067–1071 (1996). <a href="https://doi.org/10.1116/1.580135">https://doi.org/10.1116/1.580135</a></li>
+</ol>
+</div>
+    </article>
+    <aside class="newsletter" aria-labelledby="newsletter-title">
+      <p class="eyebrow">Case-study updates</p>
+      <h2 id="newsletter-title">Email updates are unavailable</h2>
+      <p>No newsletter endpoint has been configured for this build. No email field or inactive form is shown.</p>
+    </aside>
+  </main>
+    <footer class="site-footer">
+      <p>Educational geometry simulator · browser-only processing · no ads or tracking</p>
+      <p><a href="/trust/">Verify the zero-egress claim</a></p>
+    </footer>
+  </body>
+</html>

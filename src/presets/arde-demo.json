@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 3,
+  "id": "arde-demo",
+  "name": "ARDE: narrow vs. wide openings",
+  "description": "Two openings receive the same nominal etch while geometric loading slows the narrower feature.",
+  "units": "nm",
+  "grid": {
+    "width": 160,
+    "height": 120,
+    "depthSlices": 96,
+    "cellSizeNm": 2
+  },
+  "baseLayers": [
+    {
+      "id": "arde-si",
+      "name": "Silicon substrate",
+      "material": "silicon",
+      "thicknessNm": 40
+    },
+    {
+      "id": "arde-dielectric",
+      "name": "Etch dielectric",
+      "material": "low-k",
+      "thicknessNm": 140
+    }
+  ],
+  "layout": {
+    "cutPosition": 0.5,
+    "features": [
+      {
+        "id": "arde-narrow",
+        "name": "Narrow opening",
+        "role": "opening",
+        "visible": true,
+        "points": [
+          { "x": 0.12, "y": 0.15 },
+          { "x": 0.22, "y": 0.15 },
+          { "x": 0.22, "y": 0.85 },
+          { "x": 0.12, "y": 0.85 }
+        ]
+      },
+      {
+        "id": "arde-wide",
+        "name": "Wide opening",
+        "role": "opening",
+        "visible": true,
+        "points": [
+          { "x": 0.52, "y": 0.15 },
+          { "x": 0.82, "y": 0.15 },
+          { "x": 0.82, "y": 0.85 },
+          { "x": 0.52, "y": 0.85 }
+        ]
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "arde-etch",
+      "name": "Directional dielectric etch with ARDE",
+      "type": "etch",
+      "enabled": true,
+      "target": "low-k",
+      "depthNm": 120,
+      "selectivity": 12,
+      "ardeFactor": 0.3,
+      "mask": "layout",
+      "overlayNm": 0
+    }
+  ],
+  "createdAt": "2026-08-22T00:00:00.000Z",
+  "updatedAt": "2026-08-22T00:00:00.000Z"
+}
