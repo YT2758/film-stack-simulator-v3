@@ -19,9 +19,11 @@ import {
   reconcileMaterialVisibility,
   toggleMaterialVisibility,
 } from '../three/material-visibility'
+import { translate, type Language } from '../i18n'
 
 export interface ThreeViewerProps {
   document: FlowDocument
+  language: Language
   /** Zero-based inclusive step rendered in 3D. -1 renders the base stack. */
   throughStep?: number
   /** Optional UI synchronizer; the worker itself never receives a state mutator. */
@@ -159,6 +161,7 @@ function installGeometry(
 
 export default function ThreeViewer({
   document,
+  language,
   throughStep,
   onCutPositionChange,
   onReturnTo2D,
@@ -179,7 +182,7 @@ export default function ThreeViewer({
   const [materials, setMaterials] = useState<MaterialSummary[]>([])
   const [status, setStatus] = useState<ViewerStatus>({
     state: 'idle',
-    message: 'Preparing local 3D renderer…',
+    message: translate(language, 'preparing3d'),
   })
   const [retryToken, setRetryToken] = useState(0)
   documentIdRef.current = document.id
@@ -218,7 +221,7 @@ export default function ThreeViewer({
     } catch (error) {
       setStatus({
         state: 'error',
-        message: `WebGL renderer could not be created. ${error instanceof Error ? error.message : 'WebGL is unavailable in this browser.'}`,
+        message: translate(language, 'rendererUnavailable', { detail: error instanceof Error ? error.message : translate(language, 'webglUnavailable') }),
         canRetry: true,
       })
       return
@@ -227,7 +230,7 @@ export default function ThreeViewer({
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.setClearColor('#07111f', 1)
-    renderer.domElement.setAttribute('aria-label', 'Interactive 3D film stack view')
+    renderer.domElement.setAttribute('aria-label', translate(language, 'interactive3d'))
     renderer.domElement.style.display = 'block'
     renderer.domElement.style.width = '100%'
     renderer.domElement.style.height = '100%'
@@ -241,14 +244,14 @@ export default function ThreeViewer({
       firstFrameRef.current = null
       setStatus({
         state: 'error',
-        message: 'The WebGL context was lost. The process flow is unchanged; continue in 2D or retry 3D.',
+        message: translate(language, 'contextLost'),
         canRetry: true,
       })
     }
     const handleContextRestored = () => {
       setStatus({
         state: 'error',
-        message: 'WebGL became available again. Retry to rebuild the 3D renderer from the current flow.',
+        message: translate(language, 'contextRestored'),
         canRetry: true,
       })
     }
@@ -295,7 +298,7 @@ export default function ThreeViewer({
       contextLost: false,
     }
     runtimeRef.current = runtime
-    setStatus({ state: 'renderer-ready', message: 'WebGL renderer created. Waiting for local geometry…' })
+    setStatus({ state: 'renderer-ready', message: translate(language, 'rendererCreated') })
 
     const renderFrame = () => {
       if (runtime.contextLost) return
@@ -306,7 +309,7 @@ export default function ThreeViewer({
         runtime.contextLost = true
         setStatus({
           state: 'error',
-          message: `3D rendering stopped before a frame could be presented. ${error instanceof Error ? error.message : String(error)}`,
+          message: translate(language, 'renderStopped', { detail: error instanceof Error ? error.message : String(error) }),
           canRetry: true,
         })
         return
@@ -329,7 +332,7 @@ export default function ThreeViewer({
       renderer.domElement.remove()
       runtimeRef.current = null
     }
-  }, [retryToken])
+  }, [language, retryToken])
 
   useEffect(() => {
     const worker = new Worker(new URL('../three/volume.worker.ts', import.meta.url), {
@@ -342,7 +345,7 @@ export default function ThreeViewer({
       const response = event.data
       if (response.generationId !== generationRef.current) return
       if (response.type === 'volume-error') {
-        setStatus({ state: 'error', message: `Local 3D geometry generation failed. ${response.message}`, canRetry: true })
+        setStatus({ state: 'error', message: translate(language, 'geometryFailed', { detail: response.message }), canRetry: true })
         return
       }
 
@@ -360,13 +363,13 @@ export default function ThreeViewer({
       if (!runtime || runtime.contextLost) {
         setStatus({
           state: 'error',
-          message: 'Geometry was calculated, but no working WebGL renderer is available. Continue in 2D or retry 3D.',
+          message: translate(language, 'geometryNoRenderer'),
           canRetry: true,
         })
         return
       }
 
-      setStatus({ state: 'working', message: 'Geometry calculated. Presenting the first WebGL frame…' })
+      setStatus({ state: 'working', message: translate(language, 'presentingFrame') })
       setMaterials(installGeometry(runtime, response.geometry, nextVisibility.visibleCodes))
       if (fittedDocumentRef.current !== documentKey) {
         fitCamera(runtime, response.geometry)
@@ -382,29 +385,27 @@ export default function ThreeViewer({
           setStatus({
             state: 'ready',
             downsampled: response.geometry.downsampled,
-            message: response.geometry.downsampled
-              ? `Ready in ${elapsed} ms · first frame presented · display downsampled (cut cap remains exact).`
-              : `Ready in ${elapsed} ms · first frame presented at full display resolution.`,
+            message: translate(language, response.geometry.downsampled ? 'readyDownsampled' : 'readyFull', { elapsed }),
           })
         })
       } catch (error) {
         setStatus({
           state: 'error',
-          message: `Geometry was calculated, but the first WebGL frame failed. ${error instanceof Error ? error.message : String(error)}`,
+          message: translate(language, 'firstFrameFailed', { detail: error instanceof Error ? error.message : String(error) }),
           canRetry: true,
         })
       }
     }
 
     worker.onerror = (event) => {
-      setStatus({ state: 'error', message: event.message || 'The local 3D geometry worker stopped unexpectedly.', canRetry: true })
+      setStatus({ state: 'error', message: event.message || translate(language, 'workerStopped'), canRetry: true })
     }
 
     return () => {
       worker.terminate()
       workerRef.current = null
     }
-  }, [])
+  }, [language])
 
   useEffect(() => {
     const worker = workerRef.current
@@ -418,11 +419,11 @@ export default function ThreeViewer({
       cutPosition: clamp01(deferredCutPosition),
       throughStep,
     }
-    setStatus({ state: 'working', message: 'Generating geometry in a local Web Worker…' })
+    setStatus({ state: 'working', message: translate(language, 'generatingGeometry') })
     // Coalesce slider input so superseded full-volume jobs do not queue behind one another.
     const timeout = window.setTimeout(() => worker.postMessage(request), 60)
     return () => window.clearTimeout(timeout)
-  }, [document, deferredCutPosition, throughStep, retryToken])
+  }, [document, deferredCutPosition, language, throughStep, retryToken])
 
   const toggleMaterial = (code: number) => {
     const nextVisibility = toggleMaterialVisibility(
@@ -440,12 +441,12 @@ export default function ThreeViewer({
     try {
       runtime.renderer.render(runtime.scene, runtime.camera)
     } catch (error) {
-      setStatus({ state: 'error', message: `PNG export failed while rendering. ${error instanceof Error ? error.message : String(error)}`, canRetry: true })
+      setStatus({ state: 'error', message: translate(language, 'pngRenderFailed', { detail: error instanceof Error ? error.message : String(error) }), canRetry: true })
       return
     }
     runtime.renderer.domElement.toBlob((blob) => {
       if (!blob) {
-        setStatus({ state: 'error', message: 'This browser could not create a non-empty PNG from the current 3D frame.', canRetry: true })
+        setStatus({ state: 'error', message: translate(language, 'pngEmpty'), canRetry: true })
         return
       }
       const url = URL.createObjectURL(blob)
@@ -463,10 +464,10 @@ export default function ThreeViewer({
     : 1
 
   return (
-    <section className={className} style={{ ...panelStyle, ...style }} aria-label="3D view">
+    <section className={className} style={{ ...panelStyle, ...style }} aria-label={translate(language, 'threeViewLabel')}>
       <div style={toolbarStyle}>
         <label style={{ display: 'grid', gap: '0.25rem', flex: '1 1 18rem' }}>
-          <span>Cut plane · {(cutPosition * 100).toFixed(1)}% across layout Y</span>
+          <span>{translate(language, 'cutPlane', { value: (cutPosition * 100).toFixed(1) })}</span>
           <input
             type="range"
             min={0}
@@ -478,11 +479,11 @@ export default function ThreeViewer({
               setCutPosition(nextCutPosition)
               onCutPositionChange?.(nextCutPosition)
             }}
-            aria-label="3D cut plane"
+            aria-label={translate(language, 'cutPlaneLabel')}
           />
         </label>
         <button type="button" onClick={exportPng} style={{ ...buttonStyle, opacity: status.state === 'ready' ? 1 : 0.45 }} disabled={status.state !== 'ready'}>
-          Export PNG locally
+          {translate(language, 'exportPng')}
         </button>
       </div>
 
@@ -491,7 +492,7 @@ export default function ThreeViewer({
         style={{ width: '100%', height: 'clamp(22rem, 58vh, 42rem)', borderRadius: '0.5rem', overflow: 'hidden' }}
       />
 
-      <div style={toolbarStyle} aria-label="Material visibility">
+      <div style={toolbarStyle} aria-label={translate(language, 'materialVisibility')}>
         {materials.map((material) => {
           const definition = CODE_MATERIAL.get(material.code)
           return (
@@ -505,7 +506,7 @@ export default function ThreeViewer({
                 aria-hidden="true"
                 style={{ width: '0.8rem', height: '0.8rem', borderRadius: '0.2rem', background: definition?.color ?? '#d1d5db' }}
               />
-              {definition?.name ?? `Material ${material.code}`}
+              {definition?.name ?? translate(language, 'materialNumber', { code: material.code })}
             </label>
           )
         })}
@@ -520,16 +521,14 @@ export default function ThreeViewer({
       </p>
 
       {status.state === 'error' && (
-        <div style={toolbarStyle} role="group" aria-label="3D recovery actions">
-          {onReturnTo2D && <button type="button" onClick={onReturnTo2D} style={buttonStyle}>Return to 2D</button>}
-          {status.canRetry && <button type="button" onClick={() => setRetryToken((current) => current + 1)} style={buttonStyle}>Retry 3D</button>}
+        <div style={toolbarStyle} role="group" aria-label={translate(language, 'recoveryActions')}>
+          {onReturnTo2D && <button type="button" onClick={onReturnTo2D} style={buttonStyle}>{translate(language, 'return2d')}</button>}
+          {status.canRetry && <button type="button" onClick={() => setRetryToken((current) => current + 1)} style={buttonStyle}>{translate(language, 'retry3d')}</button>}
         </div>
       )}
 
       <p style={{ margin: 0, color: '#cbd5e1', fontSize: '0.9rem', lineHeight: 1.5 }}>
-        Presentation only: all numerical decisions use the authoritative 2D cross-section. This is a
-        geometric extrapolation of sampled 2D results, not a Monte Carlo or physical 3D simulation.
-        Drag to orbit, scroll to zoom, and right-drag to pan.
+        {translate(language, 'threeDisclaimer')}
       </p>
     </section>
   )

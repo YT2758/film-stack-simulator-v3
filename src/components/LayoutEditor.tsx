@@ -1,9 +1,11 @@
 import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { createId, type LayoutDefinition, type LayoutFeature, type LayoutRole, type Point2D, type SimulationMetrics } from '../domain/flow'
 import { ParamInfo } from './ParamInfo'
+import { translate, type Language } from '../i18n'
 
 interface LayoutEditorProps {
   layout: LayoutDefinition
+  language: Language
   onChange: (layout: LayoutDefinition) => void
   grid?: { width: number; depthSlices: number }
   viaMeasurement?: SimulationMetrics['viaAreaCells']
@@ -48,7 +50,7 @@ function createFeature(role: LayoutRole): LayoutFeature {
   }
 }
 
-export function LayoutEditor({ layout, onChange, grid, viaMeasurement }: LayoutEditorProps) {
+export function LayoutEditor({ layout, language, onChange, grid, viaMeasurement }: LayoutEditorProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [selectedId, setSelectedId] = useState<string | null>(layout.features[0]?.id ?? null)
   const [drag, setDrag] = useState<{ kind: 'cut' } | { kind: 'vertex'; featureId: string; vertex: number } | null>(null)
@@ -102,17 +104,17 @@ export function LayoutEditor({ layout, onChange, grid, viaMeasurement }: LayoutE
   return (
     <div className="layout-panel">
       <div className="panel-intro">
-        <span className="eyebrow">Mask geometry</span>
-        <h2>Top-down layout</h2>
-        <p>Drag the cut line or polygon vertices. The 2D engine samples this exact Y position.</p>
+        <span className="eyebrow">{translate(language, 'maskGeometry')}</span>
+        <h2>{translate(language, 'layout')}</h2>
+        <p>{translate(language, 'layoutHelp')}</p>
       </div>
 
-      <div className="layout-tools" role="toolbar" aria-label="Add layout feature">
-        <button type="button" onClick={() => addFeature('opening')}>+ Opening</button>
-        <button type="button" onClick={() => addFeature('via')}>+ Via</button>
-        <button type="button" onClick={() => addFeature('metal')}>+ Metal</button>
-        <button type="button" onClick={() => addFeature('mandrel')}>+ Mandrel</button>
-        <button type="button" onClick={() => addFeature('guide')}>+ Polygon</button>
+      <div className="layout-tools" role="toolbar" aria-label={translate(language, 'addLayoutFeature')}>
+        <button type="button" onClick={() => addFeature('opening')}>+ {translate(language, 'opening')}</button>
+        <button type="button" onClick={() => addFeature('via')}>+ {translate(language, 'via')}</button>
+        <button type="button" onClick={() => addFeature('metal')}>+ {translate(language, 'metal')}</button>
+        <button type="button" onClick={() => addFeature('mandrel')}>+ {translate(language, 'mandrel')}</button>
+        <button type="button" onClick={() => addFeature('guide')}>+ {translate(language, 'polygon')}</button>
       </div>
 
       <div className="layout-canvas-shell">
@@ -121,7 +123,7 @@ export function LayoutEditor({ layout, onChange, grid, viaMeasurement }: LayoutE
           className="layout-canvas"
           viewBox="0 0 100 100"
           role="img"
-          aria-label="Editable top-down layout with a horizontal cut line"
+          aria-label={translate(language, 'editableLayout')}
           onPointerMove={handlePointerMove}
           onPointerUp={() => setDrag(null)}
           onPointerLeave={() => setDrag(null)}
@@ -161,7 +163,7 @@ export function LayoutEditor({ layout, onChange, grid, viaMeasurement }: LayoutE
             </g>
           ))}
           {grid && viaMeasurement && (
-            <g aria-label="Via landed-area measurement overlay" pointerEvents="none">
+            <g aria-label={translate(language, 'viaOverlay')} pointerEvents="none">
               <path d={viaCellPath(viaMeasurement.shiftedIndices, false)} fill="rgba(239,141,116,.58)" />
               <path d={viaCellPath(viaMeasurement.shiftedIndices, true)} fill="rgba(103,223,201,.72)" />
             </g>
@@ -182,12 +184,12 @@ export function LayoutEditor({ layout, onChange, grid, viaMeasurement }: LayoutE
         <div className="layout-axis axis-y">Y</div>
       </div>
       {viaMeasurement && (
-        <div className="layout-measurement-note"><span><i className="landed" />Landed</span><span><i className="unlanded" />Unlanded</span><strong>{viaMeasurement.landed} / {viaMeasurement.nominal} nominal via cells</strong></div>
+        <div className="layout-measurement-note"><span><i className="landed" />{translate(language, 'landed')}</span><span><i className="unlanded" />{translate(language, 'unlanded')}</span><strong>{translate(language, 'nominalViaCells', { landed: viaMeasurement.landed, nominal: viaMeasurement.nominal })}</strong></div>
       )}
 
-      <ParamInfo docId="layout.cutPosition" label="Cross-section cut" valueText={`${Math.round(layout.cutPosition * 100)}%`}>
+      <ParamInfo docId="layout.cutPosition" label={translate(language, 'crossSectionCut')} language={language} valueText={`${Math.round(layout.cutPosition * 100)}%`}>
         <input
-          aria-label="Cross-section cut position"
+          aria-label={translate(language, 'crossSectionCutPosition')}
           type="range"
           min="0"
           max="1"
@@ -206,8 +208,8 @@ export function LayoutEditor({ layout, onChange, grid, viaMeasurement }: LayoutE
             onClick={() => setSelectedId(feature.id)}
           >
             <i style={{ background: ROLE_COLOR[feature.role] }} />
-            <span>{feature.name}<small>{feature.role} · {feature.points.length} vertices</small></span>
-            <em>{feature.visible ? 'ON' : 'OFF'}</em>
+            <span>{feature.name}<small>{translate(language, 'vertices', { role: feature.role, count: feature.points.length })}</small></span>
+            <em>{translate(language, feature.visible ? 'on' : 'off')}</em>
           </button>
         ))}
       </div>
@@ -215,14 +217,14 @@ export function LayoutEditor({ layout, onChange, grid, viaMeasurement }: LayoutE
       {selected && (
         <div className="selected-feature-editor">
           <input
-            aria-label="Selected feature name"
+            aria-label={translate(language, 'selectedFeatureName')}
             value={selected.name}
             onChange={(event) => onChange({ ...layout, features: layout.features.map((feature) => feature.id === selected.id ? { ...feature, name: event.target.value } : feature) })}
           />
           <button type="button" className="subtle-button" onClick={() => onChange({ ...layout, features: layout.features.map((feature) => feature.id === selected.id ? { ...feature, visible: !feature.visible } : feature) })}>
-            {selected.visible ? 'Hide' : 'Show'}
+            {translate(language, selected.visible ? 'hide' : 'show')}
           </button>
-          <button type="button" className="danger-button" onClick={removeSelected}>Delete</button>
+          <button type="button" className="danger-button" onClick={removeSelected}>{translate(language, 'delete')}</button>
         </div>
       )}
     </div>

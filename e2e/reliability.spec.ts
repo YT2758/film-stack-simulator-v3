@@ -105,7 +105,7 @@ test('storage write failure is reported as a stopped save', async ({ context, pa
   await expect(page.getByText(/Browser storage only · save stopped/)).toBeVisible()
 })
 
-test('concurrent tabs stop instead of overwriting a newer draft revision', async ({ context, page }) => {
+test('concurrent tabs keep a persistent conflict state and protect both drafts', async ({ context, page }, testInfo) => {
   await openFreshWorkspace(page)
   await page.getByLabel('Flow name').fill('Original draft')
   await expect(page.getByText(/Browser storage only · saved/)).toBeVisible({ timeout: 5_000 })
@@ -119,7 +119,91 @@ test('concurrent tabs stop instead of overwriting a newer draft revision', async
   await expect(page.getByText(/Browser storage only · saved/)).toBeVisible({ timeout: 5_000 })
   await secondPage.getByLabel('Flow name').fill('Conflicting second-tab draft')
   await expect(secondPage.getByText(/Another tab saved a newer draft/)).toBeVisible({ timeout: 5_000 })
-  await expect(secondPage.getByText(/Browser storage only · save stopped/)).toBeVisible()
+  await expect(secondPage.getByText(/Browser storage only · autosave paused/)).toBeVisible()
+
+  await secondPage.getByRole('button', { name: 'Dismiss notification' }).click()
+  await expect(secondPage.getByText('A newer draft exists in another tab')).toBeVisible()
+  await secondPage.getByLabel('Flow name').fill('Conflict edits still in memory')
+  await secondPage.waitForTimeout(1_200)
+  await expect(secondPage.getByText(/Browser storage only · autosave paused/)).toBeVisible()
+  await expect(secondPage.getByText(/changes pending/)).toHaveCount(0)
+
+  await secondPage.getByRole('button', { name: /Stacks/ }).click()
+  await expect(secondPage.getByText('No named stacks yet. Autosave for this draft is paused; export it or load the newer draft.')).toBeVisible()
+  await secondPage.screenshot({ path: testInfo.outputPath('autosave-conflict.png'), fullPage: true })
+
+  const exportPromise = secondPage.waitForEvent('download')
+  await secondPage.getByRole('button', { name: 'Export current work' }).click()
+  const exported = await exportPromise
+  const exportedPath = await exported.path()
+  expect(exportedPath).not.toBeNull()
+  const exportedDocument = JSON.parse(await readFile(exportedPath as string, 'utf8'))
+  expect(exportedDocument.name).toBe('Conflict edits still in memory')
+
+  await secondPage.getByRole('button', { name: '繁中' }).click()
+  await expect(secondPage.getByText('另一分頁有較新的草稿')).toBeVisible()
+  await expect(secondPage.getByText(/僅限瀏覽器儲存 · 自動儲存已暫停/)).toBeVisible()
+  await expect(secondPage.getByText(/尚無具名堆疊；此草稿的自動儲存已暫停/)).toBeVisible()
+  await secondPage.screenshot({ path: testInfo.outputPath('autosave-conflict-zh-TW.png'), fullPage: true })
+
+  secondPage.once('dialog', (dialog) => dialog.accept())
+  await secondPage.getByRole('button', { name: '載入較新草稿' }).click()
+  await expect(secondPage.getByRole('heading', { name: 'Newer first-tab draft' })).toBeVisible()
+  await expect(secondPage.getByText(/僅限瀏覽器儲存 · 已儲存/)).toBeVisible()
+})
+
+test('Traditional Chinese covers core editing, comparison, validation, storage, and WebGL recovery', async ({ context, page }, testInfo) => {
+  await context.addInitScript(() => {
+    const original = HTMLCanvasElement.prototype.getContext
+    HTMLCanvasElement.prototype.getContext = function (type: string, ...args: unknown[]) {
+      if (type === 'webgl' || type === 'webgl2' || type === 'experimental-webgl') return null
+      return original.call(this, type as never, ...(args as []))
+    } as typeof HTMLCanvasElement.prototype.getContext
+  })
+  await openFreshWorkspace(page)
+  const originalName = await page.getByLabel('Flow name').inputValue()
+  await page.getByRole('button', { name: '繁中' }).click()
+  await expect(page.getByLabel('流程名稱')).toHaveValue(originalName)
+  await page.getByRole('button', { name: /蝕刻（Etch）/ }).click()
+
+  const depth = page.getByLabel('蝕刻深度數值')
+  await depth.fill('-10')
+  await depth.press('Tab')
+  await expect(depth).toHaveValue('2')
+  await expect(page.getByText('已調整為 2 nm：允許範圍為 2–240 nm。')).toBeVisible()
+  await expect(page.getByText(/網格解析度：每格 2 nm/).first()).toBeVisible()
+  await page.getByRole('button', { name: '關於命令深度' }).click()
+  await expect(page.getByText('名目蝕刻深度')).toBeVisible()
+  await expect(page.getByText(/幾何負載與選擇比修正前/)).toBeVisible()
+
+  await page.getByRole('tab', { name: /前後比較/ }).click()
+  const comparison = page.getByLabel('前一步與目前步驟的製程比較')
+  await expect(comparison.getByText('前一步')).toBeVisible()
+  await expect(comparison.getByText('目前步驟')).toBeVisible()
+  await expect(comparison.getByText(/移除 \d+/)).toBeVisible()
+
+  await page.locator('.side-tabs').getByRole('button', { name: /堆疊/ }).click()
+  await expect(page.getByText(/尚無具名堆疊/)).toBeVisible()
+  await page.getByRole('tab', { name: /3D 視圖/ }).click()
+  await expect(page.getByText(/無法建立 WebGL 渲染器|沒有可用的 WebGL 渲染器/)).toBeVisible()
+  await expect(page.getByRole('button', { name: '在本機匯出 PNG' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: '返回 2D 剖面' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '重試 3D' })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('traditional-chinese-core.png'), fullPage: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+  const returnButton = page.getByRole('button', { name: '返回 2D 剖面' })
+  await expect(returnButton).toBeVisible()
+  const recoveryIsInsideViewer = await returnButton.evaluate((button) => {
+    const viewer = button.closest('.three-viewer')
+    if (!viewer) return false
+    const buttonRect = button.getBoundingClientRect()
+    const viewerRect = viewer.getBoundingClientRect()
+    return buttonRect.top >= viewerRect.top && buttonRect.bottom <= viewerRect.bottom
+  })
+  expect(recoveryIsInsideViewer).toBe(true)
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+  expect(overflow).toBeLessThanOrEqual(1)
+  await page.screenshot({ path: testInfo.outputPath('traditional-chinese-phone.png'), fullPage: true })
 })
 
 test('core 2D workspace remains usable at desktop and phone widths', async ({ page }, testInfo) => {

@@ -3,6 +3,7 @@ import type { DepositStep, FlowDocument, SimulationSnapshot } from '../domain/fl
 import { CODE_MATERIAL, MATERIALS } from '../domain/materials'
 import { connectedMaterialRegion, inspectSnapshotCell, type MaterialCellInspection } from '../engine/selection'
 import type { MetricKind } from './MetricGrid'
+import { translate, type Language } from '../i18n'
 
 interface CrossSectionCanvasProps {
   snapshot: SimulationSnapshot
@@ -10,6 +11,7 @@ interface CrossSectionCanvasProps {
   embedded?: boolean
   document?: FlowDocument
   measurement?: MetricKind | null
+  language: Language
 }
 
 const CANVAS_PAD = { left: 50, right: 18, top: 20, bottom: 38 }
@@ -162,7 +164,7 @@ function drawCrossSection(canvas: HTMLCanvasElement, snapshot: SimulationSnapsho
   context.fillText(`${majorNm} nm`, pad.left + drawWidth - scaleWidth / 2 - 12, pad.top + 11)
 }
 
-export function CrossSectionCanvas({ snapshot, compareTo, embedded = false, document, measurement }: CrossSectionCanvasProps) {
+export function CrossSectionCanvas({ snapshot, compareTo, embedded = false, document, measurement, language }: CrossSectionCanvasProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [size, setSize] = useState({ width: 720, height: 480 })
@@ -211,7 +213,7 @@ export function CrossSectionCanvas({ snapshot, compareTo, embedded = false, docu
     <div className={`cross-section-wrap ${embedded ? 'embedded' : ''}`} ref={wrapperRef}>
       <canvas
         ref={canvasRef}
-        aria-label={`Material cross-section after ${snapshot.stepName}`}
+        aria-label={translate(language, 'materialCrossSection', { step: snapshot.stepName })}
         onClick={(event) => {
           const canvas = event.currentTarget
           const bounds = canvas.getBoundingClientRect()
@@ -222,31 +224,31 @@ export function CrossSectionCanvas({ snapshot, compareTo, embedded = false, docu
           setSelection(inspectSnapshotCell(snapshot, x, y))
         }}
       />
-      <div className="material-legend" aria-label="Material palette">
+      <div className="material-legend" aria-label={translate(language, 'materialPalette')}>
         {MATERIALS.filter((material) => presentCodes.has(MATERIALS.indexOf(material) + 1)).map((material) => (
           <span key={material.id}><i style={{ background: material.color }} />{material.shortName}</span>
         ))}
       </div>
-      <div className="canvas-coordinate-badge">{snapshot.width} × {snapshot.height} cells · {snapshot.cellSizeNm} nm/cell</div>
+      <div className="canvas-coordinate-badge">{translate(language, 'gridCells', { width: snapshot.width, height: snapshot.height, size: snapshot.cellSizeNm })}</div>
       {compareTo && (
-        <div className="difference-legend" aria-label="Material cell differences">
-          <span><i className="added" />Added {addedCells}</span>
-          <span><i className="removed" />Removed {removedCells}</span>
-          {replacedCells > 0 && <span><i className="replaced" />Changed {replacedCells}</span>}
+        <div className="difference-legend" aria-label={translate(language, 'cellDifferences')}>
+          <span><i className="added" />{translate(language, 'added', { count: addedCells })}</span>
+          <span><i className="removed" />{translate(language, 'removed', { count: removedCells })}</span>
+          {replacedCells > 0 && <span><i className="replaced" />{translate(language, 'changed', { count: replacedCells })}</span>}
         </div>
       )}
       {resolvedSelection && selectedMaterial && (
-        <aside className="material-inspector" aria-label="Selected material details">
-          <button type="button" aria-label="Close material details" onClick={() => setSelection(null)}>×</button>
-          <span>Selected material</span>
+        <aside className="material-inspector" aria-label={translate(language, 'selectedMaterialDetails')}>
+          <button type="button" aria-label={translate(language, 'closeMaterialDetails')} onClick={() => setSelection(null)}>×</button>
+          <span>{translate(language, 'selectedMaterial')}</span>
           <strong><i style={{ background: selectedMaterial.color }} />{selectedMaterial.name} ({selectedMaterial.shortName})</strong>
           <dl>
-            <div><dt>Location</dt><dd>X {resolvedSelection.xNm.toFixed(1)} nm · height {resolvedSelection.heightNm.toFixed(1)} nm</dd></div>
-            <div><dt>Local remaining thickness</dt><dd>{resolvedSelection.localVerticalThicknessNm} nm at this X, measured from contiguous engine cells</dd></div>
-            <div><dt>Starting definition</dt><dd>{startingThicknessNm > 0 ? `${startingThicknessNm} nm nominal across matching base layers` : 'Not present in the starting stack'}</dd></div>
-            <div><dt>Nominal deposition</dt><dd>{nominalDepositions.length > 0 ? nominalDepositions.map((step) => `${step.name}: ${step.thicknessNm} nm`).join(' · ') : 'No matching deposition command'}</dd></div>
+            <div><dt>{translate(language, 'location')}</dt><dd>{translate(language, 'locationValue', { x: resolvedSelection.xNm.toFixed(1), height: resolvedSelection.heightNm.toFixed(1) })}</dd></div>
+            <div><dt>{translate(language, 'localRemaining')}</dt><dd>{translate(language, 'localRemainingValue', { value: resolvedSelection.localVerticalThicknessNm })}</dd></div>
+            <div><dt>{translate(language, 'startingDefinition')}</dt><dd>{startingThicknessNm > 0 ? translate(language, 'startingDefinitionValue', { value: startingThicknessNm }) : translate(language, 'notStartingStack')}</dd></div>
+            <div><dt>{translate(language, 'nominalDeposition')}</dt><dd>{nominalDepositions.length > 0 ? nominalDepositions.map((step) => `${step.name}: ${step.thicknessNm} nm`).join(' · ') : translate(language, 'noDeposition')}</dd></div>
           </dl>
-          <p>Cell provenance is not stored in schema v3. Repeated uses of the same material cannot be attributed to one source step.</p>
+          <p>{translate(language, 'provenanceUnavailable')}</p>
         </aside>
       )}
     </div>

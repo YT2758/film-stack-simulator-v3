@@ -13,7 +13,7 @@ import { CrossSectionCanvas } from './components/CrossSectionCanvas'
 import { CrossSectionComparison } from './components/CrossSectionComparison'
 import { MetricGrid, type MetricKind } from './components/MetricGrid'
 import { TrustBanner } from './components/TrustBanner'
-import { translate, type Language } from './i18n'
+import { translate, type AutosaveStatus, type Language } from './i18n'
 
 const ThreeViewer = lazy(() => import('./components/ThreeViewer'))
 
@@ -24,7 +24,7 @@ interface StartupState {
   document: FlowDocument
   preset?: PresetDefinition
   source: 'blank' | 'preset' | 'fragment' | 'invalid-link'
-  warning?: string
+  warning?: { kind: 'invalid-share' } | { kind: 'unknown-preset'; id: string }
 }
 
 function initialState(): StartupState {
@@ -36,13 +36,13 @@ function initialState(): StartupState {
     try {
       return { document: decodeFlowFragment(window.location.hash), source: 'fragment' }
     } catch (error) {
-      return { document: createBlankFlow(), source: 'invalid-link', warning: error instanceof Error ? error.message : 'The share link could not be restored.' }
+      return { document: createBlankFlow(), source: 'invalid-link', warning: { kind: 'invalid-share' } }
     }
   }
   if (presetId) {
     const preset = getPresetById(presetId)
     if (preset) return { document: structuredClone(preset.document), preset, source: 'preset' }
-    return { document: createBlankFlow(), source: 'invalid-link', warning: `Unknown preset “${presetId}”. A blank local flow was opened instead.` }
+    return { document: createBlankFlow(), source: 'invalid-link', warning: { kind: 'unknown-preset', id: presetId } }
   }
   return { document: createBlankFlow(), source: 'blank' }
 }
@@ -99,11 +99,15 @@ export default function App() {
   const [resumeCandidate, setResumeCandidate] = useState<FlowDocument | null>(null)
   const [resumeChecked, setResumeChecked] = useState(startup.source !== 'blank')
   const [autosaveArmed, setAutosaveArmed] = useState(startup.source === 'blank')
-  const [saveStatus, setSaveStatus] = useState<'checking' | 'unsaved' | 'saving' | 'saved' | 'error'>(startup.source === 'blank' ? 'checking' : 'unsaved')
-  const [notice, setNotice] = useState<{ message: string; tone: 'success' | 'warning' } | null>(startup.warning ? { message: startup.warning, tone: 'warning' } : null)
+  const [saveStatus, setSaveStatus] = useState<AutosaveStatus>(startup.source === 'blank' ? 'checking' : 'pending')
+  const [notice, setNotice] = useState<{ message: string; tone: 'success' | 'warning' } | null>(startup.warning ? {
+    message: startup.warning.kind === 'invalid-share' ? translate(language, 'invalidShare') : translate(language, 'unknownPreset', { id: startup.warning.id }),
+    tone: 'warning',
+  } : null)
   const [draggingFile, setDraggingFile] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const draftRevisionRef = useRef<number | null>(null)
+  const flowGenerationRef = useRef(0)
   const writerIdRef = useRef(`tab-${crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`}`)
 
   const snapshots = useMemo(() => simulateFlow(flow, flow.layout.cutPosition), [flow])
@@ -126,33 +130,36 @@ export default function App() {
       if (!active) return
       draftRevisionRef.current = record?.revision ?? null
       if (record) setResumeCandidate(record.document)
-      setSaveStatus(record ? 'unsaved' : 'saved')
+      setSaveStatus(record ? 'pending' : 'saved')
     }).finally(() => { if (active) setResumeChecked(true) })
     return () => { active = false }
   }, [startup.source])
 
   useEffect(() => {
-    if (!resumeChecked || resumeCandidate || !autosaveArmed || saveStatus !== 'unsaved') return
+    if (!resumeChecked || resumeCandidate || !autosaveArmed || saveStatus !== 'pending') return
     const timeout = window.setTimeout(() => {
+      const savingGeneration = flowGenerationRef.current
       setSaveStatus('saving')
       void setLastSession(flow, {
         writerId: writerIdRef.current,
         expectedRevision: draftRevisionRef.current,
       }).then((record) => {
         draftRevisionRef.current = record.revision
-        setSaveStatus('saved')
+        setSaveStatus(flowGenerationRef.current === savingGeneration ? 'saved' : 'pending')
       }).catch((error) => {
         setSaveStatus('error')
         if (error instanceof DraftConflictError) {
           setAutosaveArmed(false)
-          showNotice(`${error.message} Export JSON or reload before choosing which draft to keep.`, 'warning')
+          setSaveStatus('conflict')
+          showNotice(translate(language, 'conflictNotice'), 'warning')
           return
         }
-        showNotice('Autosave is unavailable. Export JSON to protect this work.', 'warning')
+        setAutosaveArmed(false)
+        showNotice(translate(language, 'autosaveUnavailable'), 'warning')
       })
     }, 1000)
     return () => window.clearTimeout(timeout)
-  }, [autosaveArmed, flow, resumeCandidate, resumeChecked, saveStatus, showNotice])
+  }, [autosaveArmed, flow, language, resumeCandidate, resumeChecked, saveStatus, showNotice])
 
   useEffect(() => {
     if (!playing) return
@@ -168,10 +175,13 @@ export default function App() {
   }, [playing, safeStage, flow.steps.length])
 
   const changeFlow = useCallback((next: FlowDocument) => {
-    setAutosaveArmed(true)
-    setSaveStatus('unsaved')
+    flowGenerationRef.current += 1
+    if (saveStatus !== 'conflict' && saveStatus !== 'error') {
+      setAutosaveArmed(true)
+      if (saveStatus !== 'saving') setSaveStatus('pending')
+    }
     setFlow(next)
-  }, [])
+  }, [saveStatus])
 
   const replaceFlow = (next: FlowDocument, source: 'local' | 'import' = 'local') => {
     changeFlow(next)
@@ -180,11 +190,11 @@ export default function App() {
     setPreset(undefined)
     setResumeCandidate(null)
     window.history.replaceState(null, '', window.location.pathname)
-    if (source === 'import') showNotice('Imported locally. No file contents were uploaded.', 'success')
+    if (source === 'import') showNotice(translate(language, 'importSuccess'), 'success')
   }
 
   const importFile = async (file: File) => {
-    if (!file.name.toLowerCase().endsWith('.json')) throw new Error('Choose a Film Stack Simulator JSON file.')
+    if (!file.name.toLowerCase().endsWith('.json')) throw new Error(translate(language, 'chooseJson'))
     replaceFlow(parseFlowJson(await file.text()), 'import')
   }
 
@@ -193,17 +203,43 @@ export default function App() {
     const url = `${window.location.origin}${window.location.pathname}#${fragment}`
     try {
       await navigator.clipboard.writeText(url)
-      showNotice('Share link copied. Its fragment stays out of server requests, but anyone you send it to can read it.', 'success')
+      showNotice(translate(language, 'shareCopied'), 'success')
     } catch {
       window.history.replaceState(null, '', `#${fragment}`)
-      showNotice('The link is now in your address bar. Copy it manually.', 'warning')
+      showNotice(translate(language, 'shareManual'), 'warning')
     }
+  }
+
+  const exportCurrentWork = () => downloadText(`${safeFilename(flow.name)}.json`, stringifyFlow(flow))
+
+  const loadNewerDraft = async () => {
+    if (!window.confirm(translate(language, 'replaceDraftWarning'))) return
+    const record = await getLastSessionRecord()
+    if (!record) {
+      showNotice(translate(language, 'newerDraftMissing'), 'warning')
+      return
+    }
+    draftRevisionRef.current = record.revision
+    setFlow(record.document)
+    setPreviewStepId(record.document.steps.at(-1)?.id ?? null)
+    setSelectedStepId(null)
+    setPreset(undefined)
+    setResumeCandidate(null)
+    setAutosaveArmed(true)
+    setSaveStatus('saved')
+    showNotice(translate(language, 'newerDraftLoaded'), 'success')
+  }
+
+  const retryAutosave = () => {
+    setAutosaveArmed(true)
+    setSaveStatus('pending')
+    showNotice(translate(language, 'autosaveRetrying'), 'success')
   }
 
   const sidebarTitle = sideTab === 'flow' ? translate(language, 'flow') : sideTab === 'layout' ? translate(language, 'layout') : translate(language, 'library')
 
   if (!resumeChecked) {
-    return <div className="startup-screen" role="status" aria-live="polite"><span className="brand-mark"><i /><i /><i /></span><p>Opening and checking this browser’s local draft…</p></div>
+    return <div className="startup-screen" role="status" aria-live="polite"><span className="brand-mark"><i /><i /><i /></span><p>{translate(language, 'openingDraft')}</p></div>
   }
 
   return (
@@ -211,92 +247,104 @@ export default function App() {
       event.preventDefault()
       setDraggingFile(false)
       const file = event.dataTransfer.files[0]
-      if (file) void importFile(file).catch((error) => showNotice(error instanceof Error ? error.message : 'Import failed.', 'warning'))
+      if (file) void importFile(file).catch((error) => showNotice(error instanceof Error ? error.message : translate(language, 'importFailed'), 'warning'))
     }}>
       <TrustBanner language={language} onLanguageChange={setLanguage} />
 
       {preset && (
         <div className="preset-banner">
-          <span className="preset-chip">PRESET</span>
+          <span className="preset-chip">{translate(language, 'preset')}</span>
           <div><strong>{preset.title}</strong><p>{preset.summary}</p></div>
-          <a href={`/case-studies/${preset.articleSlug}/`}>Back to the article ←</a>
-          <button type="button" onClick={() => setPreset(undefined)} aria-label="Dismiss preset context">×</button>
+          <a href={`/case-studies/${preset.articleSlug}/`}>{translate(language, 'backToArticle')}</a>
+          <button type="button" onClick={() => setPreset(undefined)} aria-label={translate(language, 'dismissPreset')}>×</button>
         </div>
       )}
 
       <main className="workspace">
         <aside className="sidebar">
-          <nav className="side-tabs" aria-label="Simulator controls">
+          <nav className="side-tabs" aria-label={translate(language, 'simulatorControls')}>
             {([
-              ['flow', 'Flow', 'F'], ['layout', 'Layout', 'L'], ['library', 'Stacks', 'S'],
+              ['flow', translate(language, 'flow'), 'F'], ['layout', translate(language, 'layout'), 'L'], ['library', translate(language, 'stacksTab'), 'S'],
             ] as [SideTab, string, string][]).map(([id, label, glyph]) => (
               <button type="button" key={id} className={sideTab === id ? 'active' : ''} onClick={() => setSideTab(id)}><span>{glyph}</span>{label}</button>
             ))}
           </nav>
-          <div className="sidebar-heading"><span>{sidebarTitle}</span><em>LOCAL</em></div>
+          <div className="sidebar-heading"><span>{sidebarTitle}</span><em>{translate(language, 'local')}</em></div>
           <div className="sidebar-content">
-            {sideTab === 'flow' && <FlowEditor document={flow} selectedStepId={selectedStepId} previewStepId={previewStepId} onSelectedStepChange={setSelectedStepId} onPreviewStepChange={setPreviewStepId} onChange={changeFlow} />}
-            {sideTab === 'layout' && <LayoutEditor layout={flow.layout} grid={flow.grid} viaMeasurement={activeMetric === 'via-landed-area' ? snapshot.metrics.viaAreaCells : undefined} onChange={(layout) => changeFlow({ ...flow, layout, updatedAt: new Date().toISOString() })} />}
-            {sideTab === 'library' && <StackLibrary current={flow} language={language} onLoad={replaceFlow} onNotice={showNotice} />}
+            {sideTab === 'flow' && <FlowEditor document={flow} language={language} selectedStepId={selectedStepId} previewStepId={previewStepId} onSelectedStepChange={setSelectedStepId} onPreviewStepChange={setPreviewStepId} onChange={changeFlow} />}
+            {sideTab === 'layout' && <LayoutEditor layout={flow.layout} language={language} grid={flow.grid} viaMeasurement={activeMetric === 'via-landed-area' ? snapshot.metrics.viaAreaCells : undefined} onChange={(layout) => changeFlow({ ...flow, layout, updatedAt: new Date().toISOString() })} />}
+            {sideTab === 'library' && <StackLibrary current={flow} language={language} autosaveStatus={saveStatus} onLoad={replaceFlow} onNotice={showNotice} />}
           </div>
-          <div className={`sidebar-disclosure save-${saveStatus}`}><span className="status-dot" /> Browser storage only · {saveStatus === 'checking' ? 'checking…' : saveStatus === 'unsaved' ? 'changes pending' : saveStatus === 'saving' ? 'saving…' : saveStatus === 'saved' ? 'saved' : 'save stopped'}</div>
+          {(saveStatus === 'conflict' || saveStatus === 'error') && (
+            <section className={`save-recovery save-${saveStatus}`} role="alert" aria-live="polite">
+              <strong>{translate(language, saveStatus === 'conflict' ? 'conflictTitle' : 'errorTitle')}</strong>
+              <p>{translate(language, saveStatus === 'conflict' ? 'conflictBody' : 'errorBody')}</p>
+              <div>
+                <button type="button" onClick={exportCurrentWork}>{translate(language, 'exportCurrentJson')}</button>
+                {saveStatus === 'conflict'
+                  ? <button type="button" onClick={() => void loadNewerDraft()}>{translate(language, 'loadNewerDraft')}</button>
+                  : <button type="button" onClick={retryAutosave}>{translate(language, 'retryAutosave')}</button>}
+              </div>
+            </section>
+          )}
+          <div className={`sidebar-disclosure save-${saveStatus}`} role="status"><span className="status-dot" /> {translate(language, 'browserStorageOnly', { status: translate(language, saveStatus === 'checking' ? 'saveChecking' : saveStatus === 'pending' ? 'savePending' : saveStatus === 'saving' ? 'saveSaving' : saveStatus === 'saved' ? 'saveSaved' : saveStatus === 'conflict' ? 'saveConflict' : 'saveError') })}</div>
         </aside>
 
         <section className="stage-area">
           <div className="stage-toolbar">
             <div>
-              <span className="eyebrow">Authoritative geometry</span>
+              <span className="eyebrow">{translate(language, 'authoritativeGeometry')}</span>
               <h1>{flow.name}</h1>
             </div>
-            <div className="view-tabs" role="tablist" aria-label="Visualization mode">
+            <div className="view-tabs" role="tablist" aria-label={translate(language, 'visualizationMode')}>
               <button data-testid="view-2d" role="tab" aria-selected={view === '2d'} className={view === '2d' ? 'active' : ''} type="button" onClick={() => setView('2d')}><span>▤</span>{translate(language, 'crossSection')}</button>
-              <button data-testid="view-compare" role="tab" aria-selected={view === 'compare'} className={view === 'compare' ? 'active' : ''} type="button" onClick={() => setView('compare')}><span>◫</span>Before / after</button>
+              <button data-testid="view-compare" role="tab" aria-selected={view === 'compare'} className={view === 'compare' ? 'active' : ''} type="button" onClick={() => setView('compare')}><span>◫</span>{translate(language, 'compare')}</button>
               <button data-testid="view-3d" role="tab" aria-selected={view === '3d'} className={view === '3d' ? 'active' : ''} type="button" onClick={() => setView('3d')}><span>◇</span>{translate(language, 'threeView')}</button>
             </div>
           </div>
 
           <div className="visualization-shell">
             <div className="view-caption">
-              <div><span className="live-indicator"><i /> LOCAL COMPUTE</span><strong>{snapshot.stepName}</strong></div>
-              <span>Cut Y {Math.round(flow.layout.cutPosition * 100)}% · step {safeStage}/{flow.steps.length}</span>
+              <div><span className="live-indicator"><i /> {translate(language, 'localCompute')}</span><strong>{snapshot.stepName}</strong></div>
+              <span>{translate(language, 'cutStep', { cut: Math.round(flow.layout.cutPosition * 100), current: safeStage, total: flow.steps.length })}</span>
             </div>
             {view === '2d' ? (
-              <CrossSectionCanvas snapshot={snapshot} document={flow} measurement={activeMetric} />
+              <CrossSectionCanvas snapshot={snapshot} document={flow} measurement={activeMetric} language={language} />
             ) : view === 'compare' ? (
-              <CrossSectionComparison previous={snapshots[Math.max(0, safeStage - 1)] ?? snapshots[0]} current={snapshot} document={flow} measurement={activeMetric} />
+              <CrossSectionComparison previous={snapshots[Math.max(0, safeStage - 1)] ?? snapshots[0]} current={snapshot} document={flow} measurement={activeMetric} language={language} />
             ) : (
-              <Suspense fallback={<div className="viewer-loading"><span /><p>Loading the local 3D renderer…</p></div>}>
-                <ThreeViewer className="three-viewer" document={flow} throughStep={Math.max(-1, safeStage - 1)} onCutPositionChange={(cutPosition) => changeFlow({ ...flow, layout: { ...flow.layout, cutPosition }, updatedAt: new Date().toISOString() })} onReturnTo2D={() => setView('2d')} />
+              <Suspense fallback={<div className="viewer-loading"><span /><p>{translate(language, 'loading3d')}</p></div>}>
+                <ThreeViewer className="three-viewer" language={language} document={flow} throughStep={Math.max(-1, safeStage - 1)} onCutPositionChange={(cutPosition) => changeFlow({ ...flow, layout: { ...flow.layout, cutPosition }, updatedAt: new Date().toISOString() })} onReturnTo2D={() => setView('2d')} />
               </Suspense>
             )}
           </div>
 
           <div className="timeline-panel">
-            <button type="button" aria-label="Go to starting stack" onClick={() => { setPlaying(false); setPreviewStepId(null) }}>↤</button>
-            <button type="button" aria-label={playing ? 'Pause playback' : 'Play process flow'} className="play-button" onClick={() => {
+            <button type="button" aria-label={translate(language, 'goToStartingStack')} onClick={() => { setPlaying(false); setPreviewStepId(null) }}>↤</button>
+            <button type="button" aria-label={translate(language, playing ? 'pausePlayback' : 'playProcess')} className="play-button" onClick={() => {
               if (safeStage >= flow.steps.length) setPreviewStepId(null)
               setPlaying((current) => !current)
             }}>{playing ? 'Ⅱ' : '▶'}</button>
-            <input data-testid="playback-range" aria-label="Process playback position" type="range" min="0" max={flow.steps.length} step="1" value={safeStage} onChange={(event) => {
+            <input data-testid="playback-range" aria-label={translate(language, 'playbackPosition')} type="range" min="0" max={flow.steps.length} step="1" value={safeStage} onChange={(event) => {
               setPlaying(false)
               const nextStage = Number(event.target.value)
               setPreviewStepId(nextStage === 0 ? null : flow.steps[nextStage - 1]?.id ?? null)
             }} />
-            <div><strong>{safeStage === 0 ? 'Starting stack' : flow.steps[safeStage - 1]?.name}</strong><small>{safeStage === flow.steps.length ? translate(language, 'finalState') : `${flow.steps.length - safeStage} steps remaining`}</small></div>
+            <div><strong>{safeStage === 0 ? translate(language, 'startingStack') : flow.steps[safeStage - 1]?.name}</strong><small>{safeStage === flow.steps.length ? translate(language, 'finalState') : translate(language, 'stepsRemaining', { count: flow.steps.length - safeStage })}</small></div>
             <span className="timeline-count">{String(safeStage).padStart(2, '0')} / {String(flow.steps.length).padStart(2, '0')}</span>
           </div>
 
-          <MetricGrid snapshot={snapshot} active={activeMetric} onActiveChange={setActiveMetric} onShowViaMeasurement={() => setSideTab('layout')} />
+          <MetricGrid snapshot={snapshot} language={language} active={activeMetric} onActiveChange={setActiveMetric} onShowViaMeasurement={() => setSideTab('layout')} />
 
           <div className="local-actions">
-            <div><span className="lock-glyph">⌁</span><p><strong>Local-first workspace</strong>{translate(language, 'storedOnly')}</p></div>
+            <div><span className="lock-glyph">⌁</span><p><strong>{translate(language, 'localWorkspace')}</strong>{translate(language, 'storedOnly')}</p></div>
             <div>
-              <button data-testid="export-json" type="button" onClick={() => downloadText(`${safeFilename(flow.name)}.json`, stringifyFlow(flow))}>{translate(language, 'exportJson')}</button>
+              <button data-testid="export-json" type="button" onClick={exportCurrentWork}>{translate(language, 'exportJson')}</button>
               <button type="button" onClick={() => fileInput.current?.click()}>{translate(language, 'importJson')}</button>
               <button type="button" onClick={() => void copyShareLink()}>{translate(language, 'share')}</button>
               <input ref={fileInput} hidden type="file" accept="application/json,.json" onChange={(event) => {
                 const file = event.target.files?.[0]
-                if (file) void importFile(file).catch((error) => showNotice(error instanceof Error ? error.message : 'Import failed.', 'warning'))
+                if (file) void importFile(file).catch((error) => showNotice(error instanceof Error ? error.message : translate(language, 'importFailed'), 'warning'))
                 event.target.value = ''
               }} />
             </div>
@@ -306,16 +354,16 @@ export default function App() {
         </section>
       </main>
 
-      {notice && <div className={`toast ${notice.tone}`} role="status"><span>{notice.tone === 'success' ? '✓' : '!'}</span><p>{notice.message}</p><button type="button" onClick={() => setNotice(null)}>×</button></div>}
+      {notice && <div className={`toast ${notice.tone}`} role="status"><span>{notice.tone === 'success' ? '✓' : '!'}</span><p>{notice.message}</p><button type="button" aria-label={translate(language, 'closeNotice')} onClick={() => setNotice(null)}>×</button></div>}
 
       {resumeCandidate && (
         <div className="modal-backdrop" role="presentation">
           <section className="resume-modal" role="dialog" aria-modal="true" aria-labelledby="resume-title">
             <span className="modal-icon">↻</span>
-            <span className="eyebrow">Found in this browser</span>
+            <span className="eyebrow">{translate(language, 'foundInBrowser')}</span>
             <h2 id="resume-title">{translate(language, 'resumeTitle')}</h2>
             <p>{translate(language, 'resumeBody')}</p>
-            <div className="resume-preview"><strong>{resumeCandidate.name}</strong><span>{resumeCandidate.steps.length} steps · edited {new Date(resumeCandidate.updatedAt).toLocaleString()}</span></div>
+            <div className="resume-preview"><strong>{resumeCandidate.name}</strong><span>{translate(language, 'resumePreview', { steps: resumeCandidate.steps.length, edited: new Date(resumeCandidate.updatedAt).toLocaleString(language === 'zh-TW' ? 'zh-TW' : 'en') })}</span></div>
             <div><button type="button" className="primary-button" onClick={() => {
               setFlow(resumeCandidate)
               setAutosaveArmed(true)
@@ -327,7 +375,7 @@ export default function App() {
         </div>
       )}
 
-      {draggingFile && <div className="drop-overlay"><span>↓</span><strong>Drop a flow JSON</strong><p>Parsed locally. Nothing is uploaded.</p></div>}
+      {draggingFile && <div className="drop-overlay"><span>↓</span><strong>{translate(language, 'dropFlow')}</strong><p>{translate(language, 'dropFlowDetail')}</p></div>}
     </div>
   )
 }

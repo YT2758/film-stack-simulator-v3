@@ -33,7 +33,7 @@ npm run test:egress
 Latest combined verification on 2026-09-08:
 
 - Vitest: 7 files, 33 tests passed.
-- Playwright reliability: 9 tests passed, covering step-ID synchronization, numeric commit behavior, WebGL unavailable, context loss and retry, non-empty PNG export, IndexedDB failure, multi-tab write conflict, desktop/phone 2D operation, comparison, selection, metric definitions, and exact top-down via measurement.
+- Playwright reliability: 10 tests passed, covering step-ID synchronization, numeric commit behavior, WebGL unavailable, context loss and retry, non-empty PNG export, IndexedDB failure, multi-tab write conflict and recovery, Traditional Chinese core operation, desktop/phone operation, comparison, selection, metric definitions, and exact top-down via measurement.
 - Static artifact zero-egress audit passed for 24 files.
 - Runtime zero-egress flow passed, including presets, replay, JSON import/export, share/draft restoration, named stacks, 3D, and PNG.
 
@@ -73,5 +73,32 @@ Latest combined verification on 2026-09-08:
 
 - Move preset entry points into the workspace with current-work protection.
 - Add validated numeric layout geometry controls with drag synchronization.
-- Complete Traditional Chinese coverage and improve small secondary text readability.
 - Expand SADP teaching stages only where actual engine snapshots exist; label any additional illustration as educational rather than simulated.
+
+## Follow-up reliability and localization — completed 2026-09-08
+
+- Autosave now has one explicit state model: checking, pending, saving, saved, conflict-paused, and storage-error. Footer status, the named-stack empty state, notices, and persistent recovery guidance all derive from that state.
+- Root cause fixed: `changeFlow` previously re-armed autosave after a revision conflict. Conflict and storage-error states now remain stopped while the user keeps editing, so unsaved memory state is never relabelled as saved or pending.
+- A second race was closed: edits made while an IndexedDB write is in flight remain in the saving state, then queue a new save after the completed write rather than being incorrectly marked saved.
+- Conflict recovery keeps both choices explicit. “Export current work” serializes the current tab's in-memory `FlowDocument`; “Load newer draft” warns before replacement and then loads the latest revision. Saving a named copy never overwrites the last-session draft and does not silently resume autosave.
+- Traditional Chinese now covers the core simulator controls, parameter labels and parameter help, validation and grid-quantization messages, comparison/selection/metric explanations, layout controls, autosave and multi-tab recovery, JSON actions, 3D state/errors/recovery, and accessible names. User-entered and document-stored names are not translated.
+- Secondary text contrast was raised. At 390 px, the 3D failure message and recovery buttons remain inside the visible viewer instead of being pushed below its internal scroll area.
+- English mode remains the default and all existing English regression expectations continue to pass.
+
+### Visual evidence
+
+- `docs/screenshots/autosave-conflict-zh-TW.png` — persistent multi-tab conflict state, consistent Stacks copy, and recovery actions.
+- `docs/screenshots/before-after-comparison.png` — previous/current snapshots, difference overlay, material selection, and metric explanation.
+- `docs/screenshots/traditional-chinese-core.png` — desktop Traditional Chinese core workspace and WebGL failure recovery.
+- `docs/screenshots/traditional-chinese-phone.png` — 390 px Traditional Chinese layout with visible 3D recovery controls.
+
+### Latest regression result
+
+- Vitest: 7 files, 33 tests passed.
+- Playwright: 10 tests passed.
+- Content verification: 3 case studies and 18 parameter documents passed.
+- Release build with `PUBLIC_SITE_URL=https://film-stack-simulator-v3.pages.dev`: passed; 24-file zero-egress artifact audit passed.
+- Local production runtime zero-egress replay: passed, including presets, draft restoration, JSON/PNG round trips, named-stack operations, and 3D.
+- Physical phone touch and the full browser/GPU matrix remain unverified; the 390 px test uses desktop Chrome pointer automation and WebGL failure injection.
+
+The simulator is ready for the planned three-feature illustrated introduction from a reliability and core-language standpoint. The preset workspace entry, numeric layout editor, and expanded SADP teaching sequence remain separate Stage 3 product work and are not claimed complete here.

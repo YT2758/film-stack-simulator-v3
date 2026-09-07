@@ -1,17 +1,19 @@
 import { useId, useState, type ReactNode } from 'react'
-import { PARAM_DOCS } from '../docs/param-docs'
+import { getParamDoc } from '../docs/param-docs'
+import { translate, type Language } from '../i18n'
 
 interface ParamInfoProps {
   docId: string
   label: string
   children: ReactNode
   valueText?: string
+  language: Language
 }
 
-export function ParamInfo({ docId, label, children, valueText }: ParamInfoProps) {
+export function ParamInfo({ docId, label, children, valueText, language }: ParamInfoProps) {
   const [open, setOpen] = useState(false)
   const panelId = useId()
-  const document = PARAM_DOCS.get(docId)
+  const document = getParamDoc(docId, language)
 
   return (
     <div className="control-block">
@@ -24,7 +26,7 @@ export function ParamInfo({ docId, label, children, valueText }: ParamInfoProps)
             className={`info-button ${open ? 'is-open' : ''}`}
             aria-expanded={open}
             aria-controls={panelId}
-            aria-label={`About ${label}`}
+            aria-label={translate(language, 'aboutParameter', { label })}
             onClick={() => setOpen((current) => !current)}
           >
             i
@@ -40,17 +42,17 @@ export function ParamInfo({ docId, label, children, valueText }: ParamInfoProps)
               <p>{document.physics}</p>
               {document.failureModes.length > 0 && (
                 <>
-                  <span className="param-doc-heading">Failure modes</span>
+                  <span className="param-doc-heading">{translate(language, 'failureModes')}</span>
                   <ul>{document.failureModes.map((item) => <li key={item}>{item}</li>)}</ul>
                 </>
               )}
-              {document.compareWith && <p className="compare-note"><span>Compare</span> {document.compareWith}</p>}
+              {document.compareWith && <p className="compare-note"><span>{translate(language, 'compareLabel')}</span> {document.compareWith}</p>}
               {document.relatedArticle && (
-                <a href={`/case-studies/${document.relatedArticle}/`}>Read the related case study →</a>
+                <a href={`/case-studies/${document.relatedArticle}/`}>{translate(language, 'relatedCaseStudy')}</a>
               )}
             </>
           ) : (
-            <p>Documentation for this parameter is being reviewed.</p>
+            <p>{translate(language, 'docsReviewing')}</p>
           )}
         </div>
       )}
