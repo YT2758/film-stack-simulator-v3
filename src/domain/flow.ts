@@ -116,6 +116,14 @@ export interface SimulationMetrics {
   viaLandedAreaPercent?: number
   spacerLineCentersNm?: number[]
   note?: string
+  /** Exact cells supporting the displayed running maximum etched depth. */
+  etchedDepthMeasurement?: { column: number; removedRows: number[]; sourceStepIndex: number }
+  /** Cross-section columns selected by the active layout mask at this cut. */
+  openColumnIndices?: number[]
+  /** Four-neighbour enclosed empty regions in the current cross-section. */
+  enclosedVoidRegions?: Array<{ minX: number; maxX: number; minY: number; maxY: number; size: number }>
+  /** Top-down raster counts used by the landed-area percentage. */
+  viaAreaCells?: { nominal: number; landed: number; shiftedIndices: number[]; landedIndices: number[] }
 }
 
 export interface SimulationSnapshot {

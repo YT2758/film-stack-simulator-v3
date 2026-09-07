@@ -26,6 +26,8 @@ export interface ThreeViewerProps {
   throughStep?: number
   /** Optional UI synchronizer; the worker itself never receives a state mutator. */
   onCutPositionChange?: (cutPosition: number) => void
+  /** Leaves all flow state intact and returns to the authoritative 2D view. */
+  onReturnTo2D?: () => void
   className?: string
   style?: CSSProperties
 }
@@ -38,6 +40,7 @@ interface ViewerRuntime {
   materialGroup: THREE.Group
   animationFrame: number
   resizeObserver: ResizeObserver
+  contextLost: boolean
 }
 
 interface MaterialSummary {
@@ -49,9 +52,10 @@ interface MaterialSummary {
 
 type ViewerStatus =
   | { state: 'idle'; message: string }
+  | { state: 'renderer-ready'; message: string }
   | { state: 'working'; message: string }
   | { state: 'ready'; message: string; downsampled: boolean }
-  | { state: 'error'; message: string }
+  | { state: 'error'; message: string; canRetry: boolean }
 
 const panelStyle: CSSProperties = {
   display: 'grid',
@@ -157,6 +161,7 @@ export default function ThreeViewer({
   document,
   throughStep,
   onCutPositionChange,
+  onReturnTo2D,
   className,
   style,
 }: ThreeViewerProps) {
@@ -164,6 +169,7 @@ export default function ThreeViewer({
   const runtimeRef = useRef<ViewerRuntime | null>(null)
   const workerRef = useRef<Worker | null>(null)
   const generationRef = useRef(0)
+  const firstFrameRef = useRef<number | null>(null)
   const fittedDocumentRef = useRef<string | null>(null)
   const documentIdRef = useRef(document.id)
   const materialVisibilityRef = useRef(createMaterialVisibilityState(document.id))
@@ -175,6 +181,7 @@ export default function ThreeViewer({
     state: 'idle',
     message: 'Preparing local 3D renderer…',
   })
+  const [retryToken, setRetryToken] = useState(0)
   documentIdRef.current = document.id
 
   useEffect(() => {
@@ -211,7 +218,8 @@ export default function ThreeViewer({
     } catch (error) {
       setStatus({
         state: 'error',
-        message: error instanceof Error ? error.message : 'WebGL is unavailable in this browser.',
+        message: `WebGL renderer could not be created. ${error instanceof Error ? error.message : 'WebGL is unavailable in this browser.'}`,
+        canRetry: true,
       })
       return
     }
@@ -224,6 +232,28 @@ export default function ThreeViewer({
     renderer.domElement.style.width = '100%'
     renderer.domElement.style.height = '100%'
     mount.append(renderer.domElement)
+
+    const handleContextLost = (event: Event) => {
+      event.preventDefault()
+      const runtime = runtimeRef.current
+      if (runtime) runtime.contextLost = true
+      if (firstFrameRef.current !== null) cancelAnimationFrame(firstFrameRef.current)
+      firstFrameRef.current = null
+      setStatus({
+        state: 'error',
+        message: 'The WebGL context was lost. The process flow is unchanged; continue in 2D or retry 3D.',
+        canRetry: true,
+      })
+    }
+    const handleContextRestored = () => {
+      setStatus({
+        state: 'error',
+        message: 'WebGL became available again. Retry to rebuild the 3D renderer from the current flow.',
+        canRetry: true,
+      })
+    }
+    renderer.domElement.addEventListener('webglcontextlost', handleContextLost)
+    renderer.domElement.addEventListener('webglcontextrestored', handleContextRestored)
 
     const scene = new THREE.Scene()
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 10_000)
@@ -262,27 +292,44 @@ export default function ThreeViewer({
       materialGroup,
       animationFrame: 0,
       resizeObserver,
+      contextLost: false,
     }
     runtimeRef.current = runtime
+    setStatus({ state: 'renderer-ready', message: 'WebGL renderer created. Waiting for local geometry…' })
 
     const renderFrame = () => {
+      if (runtime.contextLost) return
       controls.update()
-      renderer.render(scene, camera)
+      try {
+        renderer.render(scene, camera)
+      } catch (error) {
+        runtime.contextLost = true
+        setStatus({
+          state: 'error',
+          message: `3D rendering stopped before a frame could be presented. ${error instanceof Error ? error.message : String(error)}`,
+          canRetry: true,
+        })
+        return
+      }
       runtime.animationFrame = requestAnimationFrame(renderFrame)
     }
     renderFrame()
 
     return () => {
       cancelAnimationFrame(runtime.animationFrame)
+      if (firstFrameRef.current !== null) cancelAnimationFrame(firstFrameRef.current)
+      firstFrameRef.current = null
       resizeObserver.disconnect()
       controls.dispose()
       disposeMaterialGroup(materialGroup)
+      renderer.domElement.removeEventListener('webglcontextlost', handleContextLost)
+      renderer.domElement.removeEventListener('webglcontextrestored', handleContextRestored)
       renderer.dispose()
-      renderer.forceContextLoss()
+      if (!runtime.contextLost) renderer.forceContextLoss()
       renderer.domElement.remove()
       runtimeRef.current = null
     }
-  }, [])
+  }, [retryToken])
 
   useEffect(() => {
     const worker = new Worker(new URL('../three/volume.worker.ts', import.meta.url), {
@@ -295,7 +342,7 @@ export default function ThreeViewer({
       const response = event.data
       if (response.generationId !== generationRef.current) return
       if (response.type === 'volume-error') {
-        setStatus({ state: 'error', message: response.message })
+        setStatus({ state: 'error', message: `Local 3D geometry generation failed. ${response.message}`, canRetry: true })
         return
       }
 
@@ -310,26 +357,47 @@ export default function ThreeViewer({
       setVisibleCodes(new Set(nextVisibility.visibleCodes))
 
       const runtime = runtimeRef.current
-      if (runtime) {
-        setMaterials(installGeometry(runtime, response.geometry, nextVisibility.visibleCodes))
-        if (fittedDocumentRef.current !== documentKey) {
-          fitCamera(runtime, response.geometry)
-          fittedDocumentRef.current = documentKey
-        }
+      if (!runtime || runtime.contextLost) {
+        setStatus({
+          state: 'error',
+          message: 'Geometry was calculated, but no working WebGL renderer is available. Continue in 2D or retry 3D.',
+          canRetry: true,
+        })
+        return
+      }
+
+      setStatus({ state: 'working', message: 'Geometry calculated. Presenting the first WebGL frame…' })
+      setMaterials(installGeometry(runtime, response.geometry, nextVisibility.visibleCodes))
+      if (fittedDocumentRef.current !== documentKey) {
+        fitCamera(runtime, response.geometry)
+        fittedDocumentRef.current = documentKey
       }
 
       const elapsed = Math.max(0, response.elapsedMs).toFixed(0)
-      setStatus({
-        state: 'ready',
-        downsampled: response.geometry.downsampled,
-        message: response.geometry.downsampled
-          ? `Ready in ${elapsed} ms · 3D view is downsampled for performance (cap remains exact).`
-          : `Ready in ${elapsed} ms · full display resolution.`,
-      })
+      try {
+        runtime.renderer.render(runtime.scene, runtime.camera)
+        firstFrameRef.current = requestAnimationFrame(() => {
+          firstFrameRef.current = null
+          if (runtimeRef.current !== runtime || runtime.contextLost) return
+          setStatus({
+            state: 'ready',
+            downsampled: response.geometry.downsampled,
+            message: response.geometry.downsampled
+              ? `Ready in ${elapsed} ms · first frame presented · display downsampled (cut cap remains exact).`
+              : `Ready in ${elapsed} ms · first frame presented at full display resolution.`,
+          })
+        })
+      } catch (error) {
+        setStatus({
+          state: 'error',
+          message: `Geometry was calculated, but the first WebGL frame failed. ${error instanceof Error ? error.message : String(error)}`,
+          canRetry: true,
+        })
+      }
     }
 
     worker.onerror = (event) => {
-      setStatus({ state: 'error', message: event.message || 'The 3D worker stopped unexpectedly.' })
+      setStatus({ state: 'error', message: event.message || 'The local 3D geometry worker stopped unexpectedly.', canRetry: true })
     }
 
     return () => {
@@ -354,7 +422,7 @@ export default function ThreeViewer({
     // Coalesce slider input so superseded full-volume jobs do not queue behind one another.
     const timeout = window.setTimeout(() => worker.postMessage(request), 60)
     return () => window.clearTimeout(timeout)
-  }, [document, deferredCutPosition, throughStep])
+  }, [document, deferredCutPosition, throughStep, retryToken])
 
   const toggleMaterial = (code: number) => {
     const nextVisibility = toggleMaterialVisibility(
@@ -368,11 +436,16 @@ export default function ThreeViewer({
 
   const exportPng = () => {
     const runtime = runtimeRef.current
-    if (!runtime) return
-    runtime.renderer.render(runtime.scene, runtime.camera)
+    if (!runtime || runtime.contextLost || status.state !== 'ready') return
+    try {
+      runtime.renderer.render(runtime.scene, runtime.camera)
+    } catch (error) {
+      setStatus({ state: 'error', message: `PNG export failed while rendering. ${error instanceof Error ? error.message : String(error)}`, canRetry: true })
+      return
+    }
     runtime.renderer.domElement.toBlob((blob) => {
       if (!blob) {
-        setStatus({ state: 'error', message: 'This browser could not create the PNG.' })
+        setStatus({ state: 'error', message: 'This browser could not create a non-empty PNG from the current 3D frame.', canRetry: true })
         return
       }
       const url = URL.createObjectURL(blob)
@@ -408,7 +481,7 @@ export default function ThreeViewer({
             aria-label="3D cut plane"
           />
         </label>
-        <button type="button" onClick={exportPng} style={buttonStyle}>
+        <button type="button" onClick={exportPng} style={{ ...buttonStyle, opacity: status.state === 'ready' ? 1 : 0.45 }} disabled={status.state !== 'ready'}>
           Export PNG locally
         </button>
       </div>
@@ -445,6 +518,13 @@ export default function ThreeViewer({
       >
         {status.message}
       </p>
+
+      {status.state === 'error' && (
+        <div style={toolbarStyle} role="group" aria-label="3D recovery actions">
+          {onReturnTo2D && <button type="button" onClick={onReturnTo2D} style={buttonStyle}>Return to 2D</button>}
+          {status.canRetry && <button type="button" onClick={() => setRetryToken((current) => current + 1)} style={buttonStyle}>Retry 3D</button>}
+        </div>
+      )}
 
       <p style={{ margin: 0, color: '#cbd5e1', fontSize: '0.9rem', lineHeight: 1.5 }}>
         Presentation only: all numerical decisions use the authoritative 2D cross-section. This is a

@@ -1,11 +1,14 @@
+import { useEffect, useId, useState } from 'react'
 import { createId, type BaseLayer, type FlowDocument, type LayoutDefinition, type MaterialId, type ProcessStep, type SadpStep } from '../domain/flow'
 import { MATERIALS } from '../domain/materials'
 import { ParamInfo } from './ParamInfo'
 
 interface FlowEditorProps {
   document: FlowDocument
-  selectedStep: number
-  onSelectedStepChange: (index: number) => void
+  selectedStepId: string | null
+  previewStepId: string | null
+  onSelectedStepChange: (id: string | null) => void
+  onPreviewStepChange: (id: string | null) => void
   onChange: (document: FlowDocument) => void
 }
 
@@ -25,19 +28,80 @@ function MaterialSelect({ value, onChange }: { value: MaterialId; onChange: (val
 }
 
 function NumberControl({
-  value, min, max, step, onChange, label,
+  value, min, max, step, onChange, label, unit, gridCellSizeNm,
 }: {
-  value: number; min: number; max: number; step: number; onChange: (value: number) => void; label: string
+  value: number
+  min: number
+  max: number
+  step: number
+  onChange: (value: number) => void
+  label: string
+  unit?: string
+  gridCellSizeNm?: number
 }) {
+  const messageId = useId()
+  const [draft, setDraft] = useState(String(value))
+  const [focused, setFocused] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!focused) setDraft(String(value))
+  }, [focused, value])
+
+  const suffix = unit ? ` ${unit}` : ''
+  const commit = () => {
+    const parsed = Number(draft)
+    if (draft.trim() === '' || !Number.isFinite(parsed)) {
+      setMessage(`Enter a finite number from ${min}${suffix} to ${max}${suffix}.`)
+      return
+    }
+    const clamped = Math.max(min, Math.min(max, parsed))
+    const stepped = Math.max(min, Math.min(max, min + Math.round((clamped - min) / step) * step))
+    const normalized = Number(stepped.toFixed(10))
+    setDraft(String(normalized))
+    if (parsed < min || parsed > max) {
+      setMessage(`Adjusted to ${normalized}${suffix}: the allowed range is ${min}–${max}${suffix}.`)
+    } else if (Math.abs(normalized - parsed) > 1e-9) {
+      setMessage(`Adjusted to ${normalized}${suffix} to match the ${step}${suffix} input step.`)
+    } else {
+      setMessage(null)
+    }
+    if (normalized !== value) onChange(normalized)
+  }
+
+  const rangeValue = Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : min
   return (
-    <div className="number-control">
-      <input aria-label={label} type="range" value={value} min={min} max={max} step={step} onChange={(event) => onChange(Number(event.target.value))} />
-      <input aria-label={`${label} numeric value`} type="number" value={value} min={min} max={max} step={step} onChange={(event) => onChange(Math.max(min, Math.min(max, Number(event.target.value))))} />
+    <div className="number-control-wrap">
+      <div className="number-control">
+        <input aria-label={label} type="range" value={rangeValue} min={min} max={max} step={step} onChange={(event) => { setMessage(null); onChange(event.currentTarget.valueAsNumber) }} />
+        <input
+          aria-label={`${label} numeric value`}
+          aria-describedby={message || (unit === 'nm' && gridCellSizeNm) ? messageId : undefined}
+          aria-invalid={message ? 'true' : undefined}
+          type="number"
+          value={draft}
+          min={min}
+          max={max}
+          step={step}
+          onFocus={() => setFocused(true)}
+          onChange={(event) => { setDraft(event.target.value); setMessage(null) }}
+          onBlur={() => { setFocused(false); commit() }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') event.currentTarget.blur()
+            if (event.key === 'Escape') { setDraft(String(value)); setMessage(null); event.currentTarget.blur() }
+          }}
+        />
+      </div>
+      {(message || (unit === 'nm' && gridCellSizeNm)) && (
+        <small id={messageId} className={message ? 'number-message error' : 'number-message'}>
+          {message ?? `Grid resolution: ${gridCellSizeNm} nm per cell. Geometry distances are quantized to whole grid cells by the engine.`}
+        </small>
+      )}
     </div>
   )
 }
 
-function StepEditor({ step, onChange }: { step: ProcessStep; onChange: (step: ProcessStep) => void }) {
+function StepEditor({ step, gridCellSizeNm, onChange }: { step: ProcessStep; gridCellSizeNm: number; onChange: (step: ProcessStep) => void }) {
   if (step.type === 'deposit') {
     return (
       <div className="step-editor">
@@ -52,7 +116,7 @@ function StepEditor({ step, onChange }: { step: ProcessStep; onChange: (step: Pr
           <MaterialSelect value={step.material} onChange={(material) => onChange({ ...step, material })} />
         </ParamInfo>
         <ParamInfo docId="deposition.thicknessNm" label="Nominal thickness" valueText={`${step.thicknessNm} nm`}>
-          <NumberControl label="Nominal deposition thickness" value={step.thicknessNm} min={2} max={160} step={2} onChange={(thicknessNm) => onChange({ ...step, thicknessNm })} />
+          <NumberControl label="Nominal deposition thickness" value={step.thicknessNm} min={2} max={160} step={2} unit="nm" gridCellSizeNm={gridCellSizeNm} onChange={(thicknessNm) => onChange({ ...step, thicknessNm })} />
         </ParamInfo>
         <ParamInfo docId="deposition.sidewallFactor" label="Sidewall rate" valueText={`${Math.round(step.sidewallFactor * 100)}%`}>
           <NumberControl label="Directional sidewall rate" value={step.sidewallFactor} min={0} max={1} step={0.05} onChange={(sidewallFactor) => onChange({ ...step, sidewallFactor })} />
@@ -73,7 +137,7 @@ function StepEditor({ step, onChange }: { step: ProcessStep; onChange: (step: Pr
           </div>
         </ParamInfo>
         <ParamInfo docId="etch.depthNm" label="Commanded depth" valueText={`${step.depthNm} nm`}>
-          <NumberControl label="Etch depth" value={step.depthNm} min={2} max={240} step={2} onChange={(depthNm) => onChange({ ...step, depthNm })} />
+          <NumberControl label="Etch depth" value={step.depthNm} min={2} max={240} step={2} unit="nm" gridCellSizeNm={gridCellSizeNm} onChange={(depthNm) => onChange({ ...step, depthNm })} />
         </ParamInfo>
         <ParamInfo docId="etch.selectivity" label="Selectivity" valueText={`${step.selectivity.toFixed(1)} : 1`}>
           <NumberControl label="Etch selectivity" value={step.selectivity} min={1} max={30} step={0.5} onChange={(selectivity) => onChange({ ...step, selectivity })} />
@@ -82,7 +146,7 @@ function StepEditor({ step, onChange }: { step: ProcessStep; onChange: (step: Pr
           <NumberControl label="ARDE loading factor" value={step.ardeFactor} min={0} max={1.5} step={0.05} onChange={(ardeFactor) => onChange({ ...step, ardeFactor })} />
         </ParamInfo>
         <ParamInfo docId="etch.overlayNm" label="Lithography overlay" valueText={`${step.overlayNm > 0 ? '+' : ''}${step.overlayNm} nm`}>
-          <NumberControl label="Lithography overlay" value={step.overlayNm} min={-80} max={80} step={1} onChange={(overlayNm) => onChange({ ...step, overlayNm })} />
+          <NumberControl label="Lithography overlay" value={step.overlayNm} min={-80} max={80} step={1} unit="nm" gridCellSizeNm={gridCellSizeNm} onChange={(overlayNm) => onChange({ ...step, overlayNm })} />
         </ParamInfo>
       </div>
     )
@@ -95,19 +159,19 @@ function StepEditor({ step, onChange }: { step: ProcessStep; onChange: (step: Pr
           <MaterialSelect value={step.spacerMaterial} onChange={(spacerMaterial) => onChange({ ...step, spacerMaterial })} />
         </ParamInfo>
         <ParamInfo docId="sadp.mandrelPitchNm" label="Mandrel pitch" valueText={`${step.mandrelPitchNm} nm`}>
-          <NumberControl label="Mandrel pitch" value={step.mandrelPitchNm} min={24} max={180} step={2} onChange={(mandrelPitchNm) => onChange({ ...step, mandrelPitchNm })} />
+          <NumberControl label="Mandrel pitch" value={step.mandrelPitchNm} min={24} max={180} step={2} unit="nm" gridCellSizeNm={gridCellSizeNm} onChange={(mandrelPitchNm) => onChange({ ...step, mandrelPitchNm })} />
         </ParamInfo>
         <ParamInfo docId="sadp.mandrelWidthNm" label="Mandrel width" valueText={`${step.mandrelWidthNm} nm`}>
-          <NumberControl label="Mandrel width" value={step.mandrelWidthNm} min={6} max={80} step={2} onChange={(mandrelWidthNm) => onChange({ ...step, mandrelWidthNm })} />
+          <NumberControl label="Mandrel width" value={step.mandrelWidthNm} min={6} max={80} step={2} unit="nm" gridCellSizeNm={gridCellSizeNm} onChange={(mandrelWidthNm) => onChange({ ...step, mandrelWidthNm })} />
         </ParamInfo>
         <ParamInfo docId="sadp.spacerThicknessNm" label="Spacer thickness" valueText={`${step.spacerThicknessNm} nm`}>
-          <NumberControl label="Spacer thickness" value={step.spacerThicknessNm} min={2} max={32} step={2} onChange={(spacerThicknessNm) => onChange({ ...step, spacerThicknessNm })} />
+          <NumberControl label="Spacer thickness" value={step.spacerThicknessNm} min={2} max={32} step={2} unit="nm" gridCellSizeNm={gridCellSizeNm} onChange={(spacerThicknessNm) => onChange({ ...step, spacerThicknessNm })} />
         </ParamInfo>
         <ParamInfo docId="sadp.spacerHeightNm" label="Spacer height" valueText={`${step.spacerHeightNm} nm`}>
-          <NumberControl label="Spacer height" value={step.spacerHeightNm} min={8} max={100} step={2} onChange={(spacerHeightNm) => onChange({ ...step, spacerHeightNm })} />
+          <NumberControl label="Spacer height" value={step.spacerHeightNm} min={8} max={100} step={2} unit="nm" gridCellSizeNm={gridCellSizeNm} onChange={(spacerHeightNm) => onChange({ ...step, spacerHeightNm })} />
         </ParamInfo>
         <ParamInfo docId="sadp.pitchWalkNm" label="Pitch walk" valueText={`${step.pitchWalkNm > 0 ? '+' : ''}${step.pitchWalkNm} nm`}>
-          <NumberControl label="SADP pitch walk" value={step.pitchWalkNm} min={-20} max={20} step={1} onChange={(pitchWalkNm) => onChange({ ...step, pitchWalkNm })} />
+          <NumberControl label="SADP pitch walk" value={step.pitchWalkNm} min={-20} max={20} step={1} unit="nm" gridCellSizeNm={gridCellSizeNm} onChange={(pitchWalkNm) => onChange({ ...step, pitchWalkNm })} />
         </ParamInfo>
       </div>
     )
@@ -116,7 +180,7 @@ function StepEditor({ step, onChange }: { step: ProcessStep; onChange: (step: Pr
   return (
     <div className="step-editor">
       <ParamInfo docId="planarize.targetHeightNm" label="Final stack height" valueText={`${step.targetHeightNm} nm`}>
-        <NumberControl label="Planarization target height" value={step.targetHeightNm} min={20} max={300} step={2} onChange={(targetHeightNm) => onChange({ ...step, targetHeightNm })} />
+        <NumberControl label="Planarization target height" value={step.targetHeightNm} min={20} max={300} step={2} unit="nm" gridCellSizeNm={gridCellSizeNm} onChange={(targetHeightNm) => onChange({ ...step, targetHeightNm })} />
       </ParamInfo>
     </div>
   )
@@ -166,7 +230,7 @@ function synchronizeMandrelLayout(document: FlowDocument, step: SadpStep): Layou
   return { ...document.layout, features: [...nonMandrels, ...features] }
 }
 
-export function FlowEditor({ document, selectedStep, onSelectedStepChange, onChange }: FlowEditorProps) {
+export function FlowEditor({ document, selectedStepId, previewStepId, onSelectedStepChange, onPreviewStepChange, onChange }: FlowEditorProps) {
   const update = (patch: Partial<FlowDocument>) => onChange({ ...document, ...patch, updatedAt: new Date().toISOString() })
   const updateLayer = (id: string, patch: Partial<BaseLayer>) => update({ baseLayers: document.baseLayers.map((layer) => layer.id === id ? { ...layer, ...patch } : layer) })
   const updateStep = (index: number, step: ProcessStep) => {
@@ -187,7 +251,6 @@ export function FlowEditor({ document, selectedStep, onSelectedStepChange, onCha
     const steps = [...document.steps]
     ;[steps[index], steps[destination]] = [steps[destination], steps[index]]
     update({ steps })
-    onSelectedStepChange(destination)
   }
 
   const addStep = (type: ProcessStep['type']) => {
@@ -196,7 +259,8 @@ export function FlowEditor({ document, selectedStep, onSelectedStepChange, onCha
       steps: [...document.steps, step],
       ...(step.type === 'sadp' ? { layout: synchronizeMandrelLayout(document, step) } : {}),
     })
-    onSelectedStepChange(document.steps.length)
+    onSelectedStepChange(step.id)
+    onPreviewStepChange(step.id)
   }
 
   return (
@@ -218,7 +282,7 @@ export function FlowEditor({ document, selectedStep, onSelectedStepChange, onCha
                 <MaterialSelect value={layer.material} onChange={(material) => updateLayer(layer.id, { material })} />
               </div>
               <ParamInfo docId="base.thickness" label="Thickness" valueText={`${layer.thicknessNm} nm`}>
-                <input aria-label={`${layer.name} thickness`} type="number" min="2" max="300" step="2" value={layer.thicknessNm} onChange={(event) => updateLayer(layer.id, { thicknessNm: Math.max(2, Number(event.target.value)) })} />
+                <NumberControl label={`${layer.name} thickness`} value={layer.thicknessNm} min={2} max={300} step={2} unit="nm" gridCellSizeNm={document.grid.cellSizeNm} onChange={(thicknessNm) => updateLayer(layer.id, { thicknessNm })} />
               </ParamInfo>
             </div>
           ))}
@@ -235,26 +299,34 @@ export function FlowEditor({ document, selectedStep, onSelectedStepChange, onCha
           <div className="empty-state compact"><span>01</span><p>Add a process step to begin the simulation.</p></div>
         )}
         {document.steps.map((step, index) => {
-          const selected = selectedStep === index
+          const selected = selectedStepId === step.id
+          const previewed = previewStepId === step.id
           return (
-            <article className={`step-card ${selected ? 'selected' : ''} ${step.enabled ? '' : 'disabled'}`} key={step.id}>
-              <button className="step-card-header" type="button" onClick={() => onSelectedStepChange(selected ? -1 : index)}>
+            <article className={`step-card ${selected ? 'selected' : ''} ${previewed ? 'previewed' : ''} ${step.enabled ? '' : 'disabled'}`} key={step.id}>
+              <button className="step-card-header" type="button" onClick={() => onSelectedStepChange(selected ? null : step.id)}>
                 <span className="step-index">{String(index + 1).padStart(2, '0')}</span>
                 <i style={{ background: STEP_LABEL[step.type].color }} />
-                <span className="step-title"><small>{STEP_LABEL[step.type].kicker}</small>{step.name}</span>
+                <span className="step-title"><small>{STEP_LABEL[step.type].kicker}{previewed ? ' · PREVIEW' : ''}</small>{step.name}</span>
                 <span className="chevron">{selected ? '−' : '+'}</span>
               </button>
               {selected && (
                 <div className="step-card-body">
+                  {previewed ? (
+                    <p className="preview-sync-note synced">Editing and previewing this step.</p>
+                  ) : (
+                    <div className="preview-sync-note"><span>The preview is showing a different process state.</span><button type="button" onClick={() => onPreviewStepChange(step.id)}>Preview this step</button></div>
+                  )}
                   <input className="step-name-input" aria-label="Step name" value={step.name} onChange={(event) => updateStep(index, { ...step, name: event.target.value })} />
-                  <StepEditor step={step} onChange={(next) => updateStep(index, next)} />
+                  <StepEditor step={step} gridCellSizeNm={document.grid.cellSizeNm} onChange={(next) => updateStep(index, next)} />
                   <div className="step-card-actions">
                     <label className="switch-label"><input type="checkbox" checked={step.enabled} onChange={(event) => updateStep(index, { ...step, enabled: event.target.checked })} /><span />Enabled</label>
                     <button type="button" onClick={() => moveStep(index, -1)} disabled={index === 0}>↑</button>
                     <button type="button" onClick={() => moveStep(index, 1)} disabled={index === document.steps.length - 1}>↓</button>
                     <button type="button" className="danger-button" onClick={() => {
+                      const previousStepId = document.steps[index - 1]?.id ?? null
                       update({ steps: document.steps.filter((_, candidateIndex) => candidateIndex !== index) })
-                      onSelectedStepChange(-1)
+                      onSelectedStepChange(null)
+                      if (previewStepId === step.id) onPreviewStepChange(previousStepId)
                     }}>Remove</button>
                   </div>
                 </div>

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DepositStep, FlowDocument, ProcessStep } from '../src/domain/flow'
+import { createBlankFlow } from '../src/domain/defaults'
 import { MATERIAL_CODE } from '../src/domain/materials'
 import {
   computeViaLandedAreaPercent,
@@ -75,6 +76,30 @@ function deposition(mode: 'conformal' | 'directional' | 'gapfill'): DepositStep 
 }
 
 describe('deterministic geometry operations', () => {
+  it('explains why the default 90 nm low-k command measures only 6 nm removed', () => {
+    const document = createBlankFlow()
+    document.steps = [{
+      id: 'default-etch',
+      name: 'Directional dielectric etch',
+      type: 'etch',
+      enabled: true,
+      target: 'low-k',
+      depthNm: 90,
+      selectivity: 8,
+      ardeFactor: 0.35,
+      mask: 'layout',
+      overlayNm: 0,
+    }]
+    const result = simulateAtCut(document)
+
+    // At the 72 nm mask opening, ARDE reduces the target-equivalent budget.
+    // Each non-target photoresist cell costs 8 target-equivalent units. The
+    // reduced budget removes only 3 PR cells at 2 nm/cell and stops before low-k.
+    expect(result.metrics.openColumns).toBe(36)
+    expect(result.metrics.etchedDepthNm).toBe(6)
+    expect(result.metrics.etchedDepthMeasurement?.removedRows).toHaveLength(3)
+  })
+
   it('fails closed instead of enumerating an unresolvable SADP pitch', () => {
     expect(sadpLineCenters(1000, {
       id: 'unsafe-sadp',

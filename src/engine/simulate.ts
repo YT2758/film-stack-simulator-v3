@@ -5,9 +5,9 @@ import type {
   SimulationMetrics,
   SimulationSnapshot,
 } from '../domain/flow'
-import { countEnclosedVoids } from './connectivity'
+import { findConnectedRegions } from './connectivity'
 import { EMPTY_CELL, cellIndex, createBaseLayerGrid, type MaterialGrid } from './grid'
-import { computeViaLandedAreaPercent, sampleLayoutMask } from './layout'
+import { measureViaLandedArea, sampleLayoutMask } from './layout'
 import { applyDeposit, applyEtch, applyPlanarize, applySadp } from './operations'
 import { MATERIAL_CODE } from '../domain/materials'
 
@@ -58,6 +58,7 @@ interface SimulationState {
   etchedDepthNm: number
   spacerLineCentersNm?: number[]
   overlayNm: number
+  etchedDepthMeasurement?: { column: number; removedRows: number[]; sourceStepIndex: number }
 }
 
 function blanketMask(width: number): Uint8Array {
@@ -71,6 +72,7 @@ function applyStep(
   state: SimulationState,
   step: ProcessStep,
   cutPosition: number,
+  stepIndex: number,
 ): SimulationState {
   if (!step.enabled) return state
   if (step.type === 'deposit') return { ...state, grid: applyDeposit(state.grid, step) }
@@ -92,10 +94,16 @@ function applyStep(
       ? blanketMask(state.grid.width)
       : sampleLayoutMask(document, cutPosition, { overlayNm: step.overlayNm })
   const result = applyEtch(state.grid, step, mask)
+  const replacesMaximum = result.etchedDepthNm > state.etchedDepthNm && result.maximumRemovedColumn !== undefined
   return {
     ...state,
     grid: result.grid,
     etchedDepthNm: Math.max(state.etchedDepthNm, result.etchedDepthNm),
+    etchedDepthMeasurement: replacesMaximum ? {
+      column: result.maximumRemovedColumn as number,
+      removedRows: [...result.maximumRemovedRows],
+      sourceStepIndex: stepIndex,
+    } : state.etchedDepthMeasurement,
     overlayNm,
   }
 }
@@ -103,13 +111,34 @@ function applyStep(
 function metricsFor(document: FlowDocument, state: SimulationState, cutPosition: number): SimulationMetrics {
   const openingMask = sampleLayoutMask(document, cutPosition, { overlayNm: state.overlayNm })
   let openColumns = 0
-  for (const value of openingMask) openColumns += value === 0 ? 0 : 1
+  const openColumnIndices: number[] = []
+  for (let index = 0; index < openingMask.length; index += 1) {
+    if (openingMask[index] === 0) continue
+    openColumns += 1
+    openColumnIndices.push(index)
+  }
+  const enclosedVoidRegions = findConnectedRegions(
+    state.grid.cells,
+    state.grid.width,
+    state.grid.height,
+    (value) => value === EMPTY_CELL,
+  ).filter((region) => !region.touchesBoundary).map(({ minX, maxX, minY, maxY, size }) => ({ minX, maxX, minY, maxY, size }))
+  const viaMeasurement = measureViaLandedArea(document, state.overlayNm)
   return {
     openColumns,
     etchedDepthNm: state.etchedDepthNm,
-    voidCount: countEnclosedVoids(state.grid.cells, state.grid.width, state.grid.height),
-    viaLandedAreaPercent: computeViaLandedAreaPercent(document, state.overlayNm),
+    voidCount: enclosedVoidRegions.length,
+    viaLandedAreaPercent: viaMeasurement.percent,
     spacerLineCentersNm: state.spacerLineCentersNm ? [...state.spacerLineCentersNm] : undefined,
+    etchedDepthMeasurement: state.etchedDepthMeasurement ? { ...state.etchedDepthMeasurement, removedRows: [...state.etchedDepthMeasurement.removedRows] } : undefined,
+    openColumnIndices,
+    enclosedVoidRegions,
+    viaAreaCells: {
+      nominal: viaMeasurement.nominalCells,
+      landed: viaMeasurement.landedCells,
+      shiftedIndices: [...viaMeasurement.shiftedIndices],
+      landedIndices: [...viaMeasurement.landedIndices],
+    },
   }
 }
 
@@ -145,7 +174,7 @@ export function simulateFlow(document: FlowDocument, cutPosition = document.layo
   }
   const snapshots = [snapshotFor(document, state, normalizedCut, -1, 'Base stack')]
   document.steps.forEach((step, stepIndex) => {
-    state = applyStep(document, state, step, normalizedCut)
+    state = applyStep(document, state, step, normalizedCut, stepIndex)
     snapshots.push(snapshotFor(document, state, normalizedCut, stepIndex, step.name))
   })
   return snapshots

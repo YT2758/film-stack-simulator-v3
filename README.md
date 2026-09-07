@@ -19,6 +19,7 @@ Useful checks:
 npm test
 npm run typecheck
 npm run test:content
+npm run test:reliability
 npm run build
 npm run test:egress
 ```
@@ -83,6 +84,7 @@ Other optional build metadata is documented in [.env.example](./.env.example).
 
 - `src/domain/` — the single serializable `FlowDocument` contract and material palette.
 - `src/engine/` — pure `Uint8Array` grid operations and authoritative 2D simulation.
+- `src/components/CrossSectionComparison.tsx` — previous/current presentation sourced only from adjacent authoritative snapshots.
 - `src/presets/` — the three static v3 flow documents and typed registry.
 - `src/persistence/` — validation, JSON codec, IndexedDB repository, and compressed fragment codec.
 - `src/three/` — volume sampling, exact cut cap, worker protocol, and display-only voxel geometry.
@@ -95,5 +97,7 @@ The 3D module is a pure consumer. It samples the same 2D engine at several layou
 ## Compatibility boundary
 
 The supplied workspace did not contain the v2 `Uint8Array` engine, its exported JSON fixture, or its SADP/via golden snapshots. A nearby older project was a v1-style layer-stack prototype backed by Supabase, so it was not copied. This repository establishes a versioned v3 schema and new deterministic goldens; it does **not** claim byte-compatible v2 import or that unavailable v2 fixtures passed.
+
+The browser-only last-session record uses a separate versioned IndexedDB envelope with an optimistic revision number. Existing v3 drafts stored directly as a `FlowDocument` are read as revision 0 and migrate on the next intentional save. This does not change the exported JSON or share-fragment schema.
 
 If authentic v2 fixtures become available, add an explicit migration in `src/persistence/` and run both old and new goldens before advertising backward compatibility.

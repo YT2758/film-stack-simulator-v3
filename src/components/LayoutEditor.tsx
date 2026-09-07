@@ -1,10 +1,12 @@
 import { useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { createId, type LayoutDefinition, type LayoutFeature, type LayoutRole, type Point2D } from '../domain/flow'
+import { createId, type LayoutDefinition, type LayoutFeature, type LayoutRole, type Point2D, type SimulationMetrics } from '../domain/flow'
 import { ParamInfo } from './ParamInfo'
 
 interface LayoutEditorProps {
   layout: LayoutDefinition
   onChange: (layout: LayoutDefinition) => void
+  grid?: { width: number; depthSlices: number }
+  viaMeasurement?: SimulationMetrics['viaAreaCells']
 }
 
 const ROLE_COLOR: Record<LayoutRole, string> = {
@@ -46,12 +48,23 @@ function createFeature(role: LayoutRole): LayoutFeature {
   }
 }
 
-export function LayoutEditor({ layout, onChange }: LayoutEditorProps) {
+export function LayoutEditor({ layout, onChange, grid, viaMeasurement }: LayoutEditorProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [selectedId, setSelectedId] = useState<string | null>(layout.features[0]?.id ?? null)
   const [drag, setDrag] = useState<{ kind: 'cut' } | { kind: 'vertex'; featureId: string; vertex: number } | null>(null)
 
   const selected = useMemo(() => layout.features.find((feature) => feature.id === selectedId), [layout.features, selectedId])
+  const landedSet = useMemo(() => new Set(viaMeasurement?.landedIndices ?? []), [viaMeasurement])
+  const viaCellPath = (indices: readonly number[], landed: boolean) => {
+    if (!grid) return ''
+    const cellWidth = 100 / grid.width
+    const cellHeight = 100 / grid.depthSlices
+    return indices.filter((index) => landedSet.has(index) === landed).map((index) => {
+      const x = (index % grid.width) * cellWidth
+      const y = Math.floor(index / grid.width) * cellHeight
+      return `M${x} ${y}h${cellWidth}v${cellHeight}h-${cellWidth}Z`
+    }).join('')
+  }
 
   const pointFromEvent = (event: ReactPointerEvent<SVGSVGElement>): Point2D => {
     const bounds = svgRef.current?.getBoundingClientRect()
@@ -147,6 +160,12 @@ export function LayoutEditor({ layout, onChange }: LayoutEditorProps) {
               ))}
             </g>
           ))}
+          {grid && viaMeasurement && (
+            <g aria-label="Via landed-area measurement overlay" pointerEvents="none">
+              <path d={viaCellPath(viaMeasurement.shiftedIndices, false)} fill="rgba(239,141,116,.58)" />
+              <path d={viaCellPath(viaMeasurement.shiftedIndices, true)} fill="rgba(103,223,201,.72)" />
+            </g>
+          )}
           <g
             className="cut-line-group"
             onPointerDown={(event) => {
@@ -162,6 +181,9 @@ export function LayoutEditor({ layout, onChange }: LayoutEditorProps) {
         <div className="layout-axis axis-x">X</div>
         <div className="layout-axis axis-y">Y</div>
       </div>
+      {viaMeasurement && (
+        <div className="layout-measurement-note"><span><i className="landed" />Landed</span><span><i className="unlanded" />Unlanded</span><strong>{viaMeasurement.landed} / {viaMeasurement.nominal} nominal via cells</strong></div>
+      )}
 
       <ParamInfo docId="layout.cutPosition" label="Cross-section cut" valueText={`${Math.round(layout.cutPosition * 100)}%`}>
         <input

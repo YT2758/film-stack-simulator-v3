@@ -97,16 +97,40 @@ export function rasterizeTopDown(document: FlowDocument, options: PolygonRasterO
  * Compute the top-down fraction of shifted via area that overlaps visible metal
  * polygons. Undefined means the layout has no rasterized via area.
  */
-export function computeViaLandedAreaPercent(document: FlowDocument, overlayNm = 0): number | undefined {
+export interface ViaLandedAreaMeasurement {
+  percent?: number
+  nominalCells: number
+  landedCells: number
+  shiftedIndices: number[]
+  landedIndices: number[]
+}
+
+export function measureViaLandedArea(document: FlowDocument, overlayNm = 0): ViaLandedAreaMeasurement {
   const offsetX = normalizedOverlayX(document, overlayNm)
   const nominalVia = rasterizeTopDown(document, { roles: ['via'] })
   const shiftedVia = rasterizeTopDown(document, { roles: ['via'], offsetXNormalized: offsetX })
   const metal = rasterizeTopDown(document, { roles: ['metal'] })
   let viaArea = 0
   let landedArea = 0
+  const shiftedIndices: number[] = []
+  const landedIndices: number[] = []
   for (let index = 0; index < nominalVia.length; index += 1) {
     if (nominalVia[index] !== 0) viaArea += 1
-    if (shiftedVia[index] !== 0 && metal[index] !== 0) landedArea += 1
+    if (shiftedVia[index] !== 0) shiftedIndices.push(index)
+    if (shiftedVia[index] !== 0 && metal[index] !== 0) {
+      landedArea += 1
+      landedIndices.push(index)
+    }
   }
-  return viaArea === 0 ? undefined : (landedArea / viaArea) * 100
+  return {
+    percent: viaArea === 0 ? undefined : (landedArea / viaArea) * 100,
+    nominalCells: viaArea,
+    landedCells: landedArea,
+    shiftedIndices,
+    landedIndices,
+  }
+}
+
+export function computeViaLandedAreaPercent(document: FlowDocument, overlayNm = 0): number | undefined {
+  return measureViaLandedArea(document, overlayNm).percent
 }

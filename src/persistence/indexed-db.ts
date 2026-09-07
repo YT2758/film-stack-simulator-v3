@@ -7,6 +7,22 @@ const STACK_STORE = 'stacks'
 const META_STORE = 'meta'
 const LAST_SESSION_KEY = 'last-session'
 
+export interface LastSessionRecord {
+  kind: 'film-stack-last-session'
+  version: 1
+  document: FlowDocument
+  revision: number
+  writerId: string
+  savedAt: string
+}
+
+export class DraftConflictError extends Error {
+  constructor() {
+    super('Another tab saved a newer draft. This tab stopped autosaving to avoid overwriting it.')
+    this.name = 'DraftConflictError'
+  }
+}
+
 export interface SavedStack {
   id: string
   name: string
@@ -97,26 +113,73 @@ export async function renameSavedStack(id: string, name: string): Promise<void> 
   }
 }
 
-export async function setLastSession(document: FlowDocument): Promise<void> {
+function asLastSessionRecord(value: unknown): LastSessionRecord | null {
+  if (!value) return null
+  if (typeof value === 'object' && value !== null && (value as { kind?: unknown }).kind === 'film-stack-last-session') {
+    const candidate = value as Partial<LastSessionRecord>
+    if (candidate.version !== 1 || !Number.isInteger(candidate.revision) || (candidate.revision ?? -1) < 1) return null
+    const document = validateFlowDocument(candidate.document)
+    return {
+      kind: 'film-stack-last-session',
+      version: 1,
+      document,
+      revision: candidate.revision as number,
+      writerId: typeof candidate.writerId === 'string' ? candidate.writerId : 'unknown-writer',
+      savedAt: typeof candidate.savedAt === 'string' ? candidate.savedAt : document.updatedAt,
+    }
+  }
+  const document = validateFlowDocument(value)
+  return {
+    kind: 'film-stack-last-session',
+    version: 1,
+    document,
+    revision: 0,
+    writerId: 'legacy-writer',
+    savedAt: document.updatedAt,
+  }
+}
+
+export async function setLastSession(
+  document: FlowDocument,
+  options: { writerId?: string; expectedRevision?: number | null } = {},
+): Promise<LastSessionRecord> {
   const database = await openDatabase()
   try {
     const transaction = database.transaction(META_STORE, 'readwrite')
-    transaction.objectStore(META_STORE).put(validateFlowDocument(document), LAST_SESSION_KEY)
+    const store = transaction.objectStore(META_STORE)
+    const currentValue = await requestResult(store.get(LAST_SESSION_KEY))
+    const current = asLastSessionRecord(currentValue)
+    if (options.expectedRevision === null && current !== null) throw new DraftConflictError()
+    if (typeof options.expectedRevision === 'number' && current?.revision !== options.expectedRevision) throw new DraftConflictError()
+    const record: LastSessionRecord = {
+      kind: 'film-stack-last-session',
+      version: 1,
+      document: validateFlowDocument(document),
+      revision: (current?.revision ?? 0) + 1,
+      writerId: options.writerId ?? 'unknown-writer',
+      savedAt: new Date().toISOString(),
+    }
+    store.put(record, LAST_SESSION_KEY)
     await transactionDone(transaction)
+    return record
+  } finally {
+    database.close()
+  }
+}
+
+export async function getLastSessionRecord(): Promise<LastSessionRecord | null> {
+  const database = await openDatabase()
+  try {
+    const transaction = database.transaction(META_STORE, 'readonly')
+    const value = await requestResult(transaction.objectStore(META_STORE).get(LAST_SESSION_KEY))
+    return asLastSessionRecord(value)
+  } catch {
+    return null
   } finally {
     database.close()
   }
 }
 
 export async function getLastSession(): Promise<FlowDocument | null> {
-  const database = await openDatabase()
-  try {
-    const transaction = database.transaction(META_STORE, 'readonly')
-    const value = await requestResult(transaction.objectStore(META_STORE).get(LAST_SESSION_KEY))
-    return value ? validateFlowDocument(value) : null
-  } catch {
-    return null
-  } finally {
-    database.close()
-  }
+  return (await getLastSessionRecord())?.document ?? null
 }

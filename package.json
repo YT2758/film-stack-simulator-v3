@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:content": "node scripts/verify-content.mjs",
+    "test:reliability": "npm run build && playwright test",
     "test:egress": "node scripts/run-egress.mjs",
     "audit:egress": "node scripts/audit-egress.mjs",
     "content:build": "node scripts/build-content.mjs",

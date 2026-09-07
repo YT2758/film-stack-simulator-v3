@@ -167,6 +167,8 @@ function maskSegmentWidths(mask: Uint8Array): Int32Array {
 export interface EtchResult {
   grid: MaterialGrid
   etchedDepthNm: number
+  maximumRemovedColumn?: number
+  maximumRemovedRows: number[]
 }
 
 /** Directional, top-down target-equivalent etch with selectivity and ARDE. */
@@ -180,6 +182,8 @@ export function applyEtch(grid: MaterialGrid, step: EtchStep, mask: Uint8Array):
   const segmentWidths = maskSegmentWidths(mask)
   const next = cloneGrid(grid)
   let maximumRemovedCells = 0
+  let maximumRemovedColumn: number | undefined
+  let maximumRemovedRows: number[] = []
 
   for (let x = 0; x < width; x += 1) {
     if (mask[x] === 0 || nominalCells === 0) continue
@@ -187,6 +191,7 @@ export function applyEtch(grid: MaterialGrid, step: EtchStep, mask: Uint8Array):
     const nominalAspectRatio = step.depthNm / openingWidthNm
     let remainingTargetCells = nominalCells / (1 + ardeFactor * nominalAspectRatio)
     let removedCells = 0
+    const removedRows: number[] = []
     for (let y = 0; y < height; y += 1) {
       const index = cellIndex(width, x, y)
       const material = next.cells[index]
@@ -196,10 +201,15 @@ export function applyEtch(grid: MaterialGrid, step: EtchStep, mask: Uint8Array):
       next.cells[index] = EMPTY_CELL
       remainingTargetCells -= cost
       removedCells += 1
+      removedRows.push(y)
     }
-    maximumRemovedCells = Math.max(maximumRemovedCells, removedCells)
+    if (removedCells > maximumRemovedCells) {
+      maximumRemovedCells = removedCells
+      maximumRemovedColumn = x
+      maximumRemovedRows = removedRows
+    }
   }
-  return { grid: next, etchedDepthNm: maximumRemovedCells * cellSizeNm }
+  return { grid: next, etchedDepthNm: maximumRemovedCells * cellSizeNm, maximumRemovedColumn, maximumRemovedRows }
 }
 
 export interface SadpResult {

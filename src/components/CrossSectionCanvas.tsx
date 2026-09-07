@@ -1,12 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import type { SimulationSnapshot } from '../domain/flow'
+import type { DepositStep, FlowDocument, SimulationSnapshot } from '../domain/flow'
 import { CODE_MATERIAL, MATERIALS } from '../domain/materials'
+import { connectedMaterialRegion, inspectSnapshotCell, type MaterialCellInspection } from '../engine/selection'
+import type { MetricKind } from './MetricGrid'
 
 interface CrossSectionCanvasProps {
   snapshot: SimulationSnapshot
+  compareTo?: SimulationSnapshot
+  embedded?: boolean
+  document?: FlowDocument
+  measurement?: MetricKind | null
 }
 
-function drawCrossSection(canvas: HTMLCanvasElement, snapshot: SimulationSnapshot, width: number, height: number) {
+const CANVAS_PAD = { left: 50, right: 18, top: 20, bottom: 38 }
+
+function drawCrossSection(canvas: HTMLCanvasElement, snapshot: SimulationSnapshot, width: number, height: number, compareTo?: SimulationSnapshot, selection?: MaterialCellInspection | null, measurement?: MetricKind | null) {
   const ratio = Math.min(window.devicePixelRatio || 1, 2)
   canvas.width = Math.round(width * ratio)
   canvas.height = Math.round(height * ratio)
@@ -15,7 +23,7 @@ function drawCrossSection(canvas: HTMLCanvasElement, snapshot: SimulationSnapsho
   context.setTransform(ratio, 0, 0, ratio, 0, 0)
   context.clearRect(0, 0, width, height)
 
-  const pad = { left: 50, right: 18, top: 20, bottom: 38 }
+  const pad = CANVAS_PAD
   const drawWidth = Math.max(1, width - pad.left - pad.right)
   const drawHeight = Math.max(1, height - pad.top - pad.bottom)
   const cellWidth = drawWidth / snapshot.width
@@ -44,6 +52,79 @@ function drawCrossSection(canvas: HTMLCanvasElement, snapshot: SimulationSnapsho
         }
         runStart = x
         runCode = code
+      }
+    }
+  }
+
+  if (compareTo && compareTo.width === snapshot.width && compareTo.height === snapshot.height) {
+    for (let y = 0; y < snapshot.height; y += 1) {
+      for (let x = 0; x < snapshot.width; x += 1) {
+        const index = y * snapshot.width + x
+        const before = compareTo.cells[index]
+        const after = snapshot.cells[index]
+        if (before === after) continue
+        context.fillStyle = before === 0
+          ? 'rgba(103, 223, 201, .42)'
+          : after === 0
+            ? 'rgba(239, 141, 116, .48)'
+            : 'rgba(241, 209, 116, .42)'
+        context.fillRect(
+          pad.left + x * cellWidth,
+          pad.top + y * cellHeight,
+          Math.max(1, cellWidth + 0.2),
+          Math.max(1, cellHeight + 0.2),
+        )
+      }
+    }
+  }
+
+  if (measurement === 'open-columns') {
+    context.fillStyle = 'rgba(103, 223, 201, .10)'
+    for (const x of snapshot.metrics.openColumnIndices ?? []) context.fillRect(pad.left + x * cellWidth, pad.top, cellWidth, drawHeight)
+  } else if (measurement === 'etched-depth' && snapshot.metrics.etchedDepthMeasurement) {
+    context.strokeStyle = '#ef8d74'
+    context.lineWidth = Math.max(1, Math.min(cellWidth, cellHeight) * 0.3)
+    const { column, removedRows } = snapshot.metrics.etchedDepthMeasurement
+    for (const y of removedRows) context.strokeRect(pad.left + column * cellWidth, pad.top + y * cellHeight, cellWidth, cellHeight)
+  } else if (measurement === 'enclosed-voids') {
+    context.strokeStyle = '#f1d174'
+    context.lineWidth = 2
+    for (const region of snapshot.metrics.enclosedVoidRegions ?? []) {
+      context.strokeRect(
+        pad.left + region.minX * cellWidth,
+        pad.top + region.minY * cellHeight,
+        (region.maxX - region.minX + 1) * cellWidth,
+        (region.maxY - region.minY + 1) * cellHeight,
+      )
+    }
+  }
+
+  if (selection && snapshot.cells[selection.y * snapshot.width + selection.x] === selection.materialCode) {
+    const region = connectedMaterialRegion(snapshot, selection.x, selection.y)
+    context.strokeStyle = 'rgba(255, 255, 255, .82)'
+    context.lineWidth = Math.max(1, Math.min(cellWidth, cellHeight) * 0.18)
+    for (const index of region) {
+      const x = index % snapshot.width
+      const y = Math.floor(index / snapshot.width)
+      const neighbors = [
+        [x - 1, y, 'left'], [x + 1, y, 'right'], [x, y - 1, 'top'], [x, y + 1, 'bottom'],
+      ] as const
+      for (const [nextX, nextY, edge] of neighbors) {
+        const outside = nextX < 0 || nextX >= snapshot.width || nextY < 0 || nextY >= snapshot.height
+        if (!outside && region.has(nextY * snapshot.width + nextX)) continue
+        const px = pad.left + x * cellWidth
+        const py = pad.top + y * cellHeight
+        context.beginPath()
+        if (edge === 'left' || edge === 'right') {
+          const edgeX = edge === 'left' ? px : px + cellWidth
+          context.moveTo(edgeX, py)
+          context.lineTo(edgeX, py + cellHeight)
+        } else {
+          const edgeY = edge === 'top' ? py : py + cellHeight
+          context.moveTo(px, edgeY)
+          context.lineTo(px + cellWidth, edgeY)
+        }
+        context.stroke()
       }
     }
   }
@@ -81,10 +162,12 @@ function drawCrossSection(canvas: HTMLCanvasElement, snapshot: SimulationSnapsho
   context.fillText(`${majorNm} nm`, pad.left + drawWidth - scaleWidth / 2 - 12, pad.top + 11)
 }
 
-export function CrossSectionCanvas({ snapshot }: CrossSectionCanvasProps) {
+export function CrossSectionCanvas({ snapshot, compareTo, embedded = false, document, measurement }: CrossSectionCanvasProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [size, setSize] = useState({ width: 720, height: 480 })
+  const [selection, setSelection] = useState<MaterialCellInspection | null>(null)
+  const resolvedSelection = selection ? inspectSnapshotCell(snapshot, selection.x, selection.y) : null
 
   useEffect(() => {
     const element = wrapperRef.current
@@ -98,20 +181,74 @@ export function CrossSectionCanvas({ snapshot }: CrossSectionCanvasProps) {
   }, [])
 
   useEffect(() => {
-    if (canvasRef.current) drawCrossSection(canvasRef.current, snapshot, size.width, size.height)
-  }, [size, snapshot])
+    if (canvasRef.current) drawCrossSection(canvasRef.current, snapshot, size.width, size.height, compareTo, resolvedSelection, measurement)
+    if (selection && !resolvedSelection) setSelection(null)
+  }, [compareTo, measurement, selection, size, snapshot])
 
   const presentCodes = new Set(snapshot.cells)
+  let addedCells = 0
+  let removedCells = 0
+  let replacedCells = 0
+  if (compareTo && compareTo.cells.length === snapshot.cells.length) {
+    for (let index = 0; index < snapshot.cells.length; index += 1) {
+      const before = compareTo.cells[index]
+      const after = snapshot.cells[index]
+      if (before === after) continue
+      if (before === 0) addedCells += 1
+      else if (after === 0) removedCells += 1
+      else replacedCells += 1
+    }
+  }
+  const selectedMaterial = resolvedSelection ? CODE_MATERIAL.get(resolvedSelection.materialCode) : undefined
+  const startingThicknessNm = selectedMaterial && document
+    ? document.baseLayers.filter((layer) => layer.material === selectedMaterial.id).reduce((sum, layer) => sum + layer.thicknessNm, 0)
+    : 0
+  const nominalDepositions = selectedMaterial && document
+    ? document.steps.filter((step): step is DepositStep => step.type === 'deposit' && step.material === selectedMaterial.id)
+    : []
 
   return (
-    <div className="cross-section-wrap" ref={wrapperRef}>
-      <canvas ref={canvasRef} aria-label={`Material cross-section after ${snapshot.stepName}`} />
+    <div className={`cross-section-wrap ${embedded ? 'embedded' : ''}`} ref={wrapperRef}>
+      <canvas
+        ref={canvasRef}
+        aria-label={`Material cross-section after ${snapshot.stepName}`}
+        onClick={(event) => {
+          const canvas = event.currentTarget
+          const bounds = canvas.getBoundingClientRect()
+          const drawWidth = Math.max(1, bounds.width - CANVAS_PAD.left - CANVAS_PAD.right)
+          const drawHeight = Math.max(1, bounds.height - CANVAS_PAD.top - CANVAS_PAD.bottom)
+          const x = Math.floor((event.clientX - bounds.left - CANVAS_PAD.left) / drawWidth * snapshot.width)
+          const y = Math.floor((event.clientY - bounds.top - CANVAS_PAD.top) / drawHeight * snapshot.height)
+          setSelection(inspectSnapshotCell(snapshot, x, y))
+        }}
+      />
       <div className="material-legend" aria-label="Material palette">
         {MATERIALS.filter((material) => presentCodes.has(MATERIALS.indexOf(material) + 1)).map((material) => (
           <span key={material.id}><i style={{ background: material.color }} />{material.shortName}</span>
         ))}
       </div>
       <div className="canvas-coordinate-badge">{snapshot.width} × {snapshot.height} cells · {snapshot.cellSizeNm} nm/cell</div>
+      {compareTo && (
+        <div className="difference-legend" aria-label="Material cell differences">
+          <span><i className="added" />Added {addedCells}</span>
+          <span><i className="removed" />Removed {removedCells}</span>
+          {replacedCells > 0 && <span><i className="replaced" />Changed {replacedCells}</span>}
+        </div>
+      )}
+      {resolvedSelection && selectedMaterial && (
+        <aside className="material-inspector" aria-label="Selected material details">
+          <button type="button" aria-label="Close material details" onClick={() => setSelection(null)}>×</button>
+          <span>Selected material</span>
+          <strong><i style={{ background: selectedMaterial.color }} />{selectedMaterial.name} ({selectedMaterial.shortName})</strong>
+          <dl>
+            <div><dt>Location</dt><dd>X {resolvedSelection.xNm.toFixed(1)} nm · height {resolvedSelection.heightNm.toFixed(1)} nm</dd></div>
+            <div><dt>Local remaining thickness</dt><dd>{resolvedSelection.localVerticalThicknessNm} nm at this X, measured from contiguous engine cells</dd></div>
+            <div><dt>Starting definition</dt><dd>{startingThicknessNm > 0 ? `${startingThicknessNm} nm nominal across matching base layers` : 'Not present in the starting stack'}</dd></div>
+            <div><dt>Nominal deposition</dt><dd>{nominalDepositions.length > 0 ? nominalDepositions.map((step) => `${step.name}: ${step.thicknessNm} nm`).join(' · ') : 'No matching deposition command'}</dd></div>
+          </dl>
+          <p>Cell provenance is not stored in schema v3. Repeated uses of the same material cannot be attributed to one source step.</p>
+        </aside>
+      )}
     </div>
   )
 }
