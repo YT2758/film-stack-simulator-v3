@@ -19,7 +19,7 @@ import {
   reconcileMaterialVisibility,
   toggleMaterialVisibility,
 } from '../three/material-visibility'
-import { translate, type Language } from '../i18n'
+import { translate, type Language, type MessageKey } from '../i18n'
 
 export interface ThreeViewerProps {
   document: FlowDocument
@@ -43,6 +43,7 @@ interface ViewerRuntime {
   animationFrame: number
   resizeObserver: ResizeObserver
   contextLost: boolean
+  fittedDocumentId: string | null
 }
 
 interface MaterialSummary {
@@ -52,12 +53,15 @@ interface MaterialSummary {
   capVoxels: number
 }
 
-type ViewerStatus =
-  | { state: 'idle'; message: string }
-  | { state: 'renderer-ready'; message: string }
-  | { state: 'working'; message: string }
-  | { state: 'ready'; message: string; downsampled: boolean }
-  | { state: 'error'; message: string; canRetry: boolean }
+type ViewerStatus = {
+  // Translate at render time so changing language never rebuilds GPU or worker state.
+  messageKey: MessageKey
+  variables?: Record<string, string | number>
+} & (
+  | { state: 'idle' | 'renderer-ready' | 'working' }
+  | { state: 'ready'; downsampled: boolean }
+  | { state: 'error'; canRetry: boolean }
+)
 
 const panelStyle: CSSProperties = {
   display: 'grid',
@@ -173,7 +177,6 @@ export default function ThreeViewer({
   const workerRef = useRef<Worker | null>(null)
   const generationRef = useRef(0)
   const firstFrameRef = useRef<number | null>(null)
-  const fittedDocumentRef = useRef<string | null>(null)
   const documentIdRef = useRef(document.id)
   const materialVisibilityRef = useRef(createMaterialVisibilityState(document.id))
   const [cutPosition, setCutPosition] = useState(() => clamp01(document.layout.cutPosition))
@@ -182,7 +185,7 @@ export default function ThreeViewer({
   const [materials, setMaterials] = useState<MaterialSummary[]>([])
   const [status, setStatus] = useState<ViewerStatus>({
     state: 'idle',
-    message: translate(language, 'preparing3d'),
+    messageKey: 'preparing3d',
   })
   const [retryToken, setRetryToken] = useState(0)
   documentIdRef.current = document.id
@@ -201,7 +204,6 @@ export default function ThreeViewer({
   }, [document.layout.cutPosition])
 
   useEffect(() => {
-    fittedDocumentRef.current = null
     materialVisibilityRef.current = createMaterialVisibilityState(document.id)
     setVisibleCodes(new Set())
     setMaterials([])
@@ -221,7 +223,8 @@ export default function ThreeViewer({
     } catch (error) {
       setStatus({
         state: 'error',
-        message: translate(language, 'rendererUnavailable', { detail: error instanceof Error ? error.message : translate(language, 'webglUnavailable') }),
+        messageKey: 'rendererUnavailable',
+        variables: { detail: error instanceof Error ? error.message : String(error) },
         canRetry: true,
       })
       return
@@ -230,7 +233,6 @@ export default function ThreeViewer({
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.setClearColor('#07111f', 1)
-    renderer.domElement.setAttribute('aria-label', translate(language, 'interactive3d'))
     renderer.domElement.style.display = 'block'
     renderer.domElement.style.width = '100%'
     renderer.domElement.style.height = '100%'
@@ -244,14 +246,14 @@ export default function ThreeViewer({
       firstFrameRef.current = null
       setStatus({
         state: 'error',
-        message: translate(language, 'contextLost'),
+        messageKey: 'contextLost',
         canRetry: true,
       })
     }
     const handleContextRestored = () => {
       setStatus({
         state: 'error',
-        message: translate(language, 'contextRestored'),
+        messageKey: 'contextRestored',
         canRetry: true,
       })
     }
@@ -296,9 +298,10 @@ export default function ThreeViewer({
       animationFrame: 0,
       resizeObserver,
       contextLost: false,
+      fittedDocumentId: null,
     }
     runtimeRef.current = runtime
-    setStatus({ state: 'renderer-ready', message: translate(language, 'rendererCreated') })
+    setStatus({ state: 'renderer-ready', messageKey: 'rendererCreated' })
 
     const renderFrame = () => {
       if (runtime.contextLost) return
@@ -309,7 +312,8 @@ export default function ThreeViewer({
         runtime.contextLost = true
         setStatus({
           state: 'error',
-          message: translate(language, 'renderStopped', { detail: error instanceof Error ? error.message : String(error) }),
+          messageKey: 'renderStopped',
+          variables: { detail: error instanceof Error ? error.message : String(error) },
           canRetry: true,
         })
         return
@@ -332,20 +336,30 @@ export default function ThreeViewer({
       renderer.domElement.remove()
       runtimeRef.current = null
     }
+  }, [retryToken])
+
+  useEffect(() => {
+    runtimeRef.current?.renderer.domElement.setAttribute('aria-label', translate(language, 'interactive3d'))
   }, [language, retryToken])
 
   useEffect(() => {
-    const worker = new Worker(new URL('../three/volume.worker.ts', import.meta.url), {
-      type: 'module',
-      name: 'film-stack-volume-builder',
-    })
+    let worker: Worker
+    try {
+      worker = new Worker(new URL('../three/volume.worker.ts', import.meta.url), {
+        type: 'module',
+        name: 'film-stack-volume-builder',
+      })
+    } catch (error) {
+      setStatus({ state: 'error', messageKey: 'geometryFailed', variables: { detail: error instanceof Error ? error.message : String(error) }, canRetry: true })
+      return
+    }
     workerRef.current = worker
 
     worker.onmessage = (event: MessageEvent<VolumeWorkerResponse>) => {
       const response = event.data
-      if (response.generationId !== generationRef.current) return
+      if (workerRef.current !== worker || response.generationId !== generationRef.current) return
       if (response.type === 'volume-error') {
-        setStatus({ state: 'error', message: translate(language, 'geometryFailed', { detail: response.message }), canRetry: true })
+        setStatus({ state: 'error', messageKey: 'geometryFailed', variables: { detail: response.message }, canRetry: true })
         return
       }
 
@@ -363,55 +377,65 @@ export default function ThreeViewer({
       if (!runtime || runtime.contextLost) {
         setStatus({
           state: 'error',
-          message: translate(language, 'geometryNoRenderer'),
+          messageKey: 'geometryNoRenderer',
           canRetry: true,
         })
         return
       }
 
-      setStatus({ state: 'working', message: translate(language, 'presentingFrame') })
-      setMaterials(installGeometry(runtime, response.geometry, nextVisibility.visibleCodes))
-      if (fittedDocumentRef.current !== documentKey) {
-        fitCamera(runtime, response.geometry)
-        fittedDocumentRef.current = documentKey
-      }
-
+      setStatus({ state: 'working', messageKey: 'presentingFrame' })
       const elapsed = Math.max(0, response.elapsedMs).toFixed(0)
       try {
+        setMaterials(installGeometry(runtime, response.geometry, nextVisibility.visibleCodes))
+        // Fitting belongs to this camera instance, including a newly retried renderer.
+        if (runtime.fittedDocumentId !== documentKey) {
+          fitCamera(runtime, response.geometry)
+          runtime.fittedDocumentId = documentKey
+        }
         runtime.renderer.render(runtime.scene, runtime.camera)
+        if (firstFrameRef.current !== null) cancelAnimationFrame(firstFrameRef.current)
         firstFrameRef.current = requestAnimationFrame(() => {
           firstFrameRef.current = null
-          if (runtimeRef.current !== runtime || runtime.contextLost) return
+          if (runtimeRef.current !== runtime || runtime.contextLost || runtime.renderer.getContext().isContextLost()
+            || workerRef.current !== worker || response.generationId !== generationRef.current) return
           setStatus({
             state: 'ready',
             downsampled: response.geometry.downsampled,
-            message: translate(language, response.geometry.downsampled ? 'readyDownsampled' : 'readyFull', { elapsed }),
+            messageKey: response.geometry.downsampled ? 'readyDownsampled' : 'readyFull',
+            variables: { elapsed },
           })
         })
       } catch (error) {
         setStatus({
           state: 'error',
-          message: translate(language, 'firstFrameFailed', { detail: error instanceof Error ? error.message : String(error) }),
+          messageKey: 'firstFrameFailed',
+          variables: { detail: error instanceof Error ? error.message : String(error) },
           canRetry: true,
         })
       }
     }
 
     worker.onerror = (event) => {
-      setStatus({ state: 'error', message: event.message || translate(language, 'workerStopped'), canRetry: true })
+      event.preventDefault()
+      if (workerRef.current !== worker) return
+      if (firstFrameRef.current !== null) cancelAnimationFrame(firstFrameRef.current)
+      firstFrameRef.current = null
+      setStatus({ state: 'error', messageKey: event.message ? 'geometryFailed' : 'workerStopped', variables: { detail: event.message }, canRetry: true })
     }
 
     return () => {
       worker.terminate()
       workerRef.current = null
     }
-  }, [language])
+  }, [retryToken])
 
   useEffect(() => {
     const worker = workerRef.current
     if (!worker) return
     const generationId = generationRef.current + 1
     generationRef.current = generationId
+    if (firstFrameRef.current !== null) cancelAnimationFrame(firstFrameRef.current)
+    firstFrameRef.current = null
     const request: VolumeWorkerBuildRequest = {
       type: 'build-volume',
       generationId,
@@ -419,11 +443,17 @@ export default function ThreeViewer({
       cutPosition: clamp01(deferredCutPosition),
       throughStep,
     }
-    setStatus({ state: 'working', message: translate(language, 'generatingGeometry') })
+    setStatus({ state: 'working', messageKey: 'generatingGeometry' })
     // Coalesce slider input so superseded full-volume jobs do not queue behind one another.
-    const timeout = window.setTimeout(() => worker.postMessage(request), 60)
+    const timeout = window.setTimeout(() => {
+      try {
+        worker.postMessage(request)
+      } catch (error) {
+        setStatus({ state: 'error', messageKey: 'geometryFailed', variables: { detail: error instanceof Error ? error.message : String(error) }, canRetry: true })
+      }
+    }, 60)
     return () => window.clearTimeout(timeout)
-  }, [document, deferredCutPosition, language, throughStep, retryToken])
+  }, [document, deferredCutPosition, throughStep, retryToken])
 
   const toggleMaterial = (code: number) => {
     const nextVisibility = toggleMaterialVisibility(
@@ -441,12 +471,12 @@ export default function ThreeViewer({
     try {
       runtime.renderer.render(runtime.scene, runtime.camera)
     } catch (error) {
-      setStatus({ state: 'error', message: translate(language, 'pngRenderFailed', { detail: error instanceof Error ? error.message : String(error) }), canRetry: true })
+      setStatus({ state: 'error', messageKey: 'pngRenderFailed', variables: { detail: error instanceof Error ? error.message : String(error) }, canRetry: true })
       return
     }
     runtime.renderer.domElement.toBlob((blob) => {
       if (!blob) {
-        setStatus({ state: 'error', message: translate(language, 'pngEmpty'), canRetry: true })
+        setStatus({ state: 'error', messageKey: 'pngEmpty', canRetry: true })
         return
       }
       const url = URL.createObjectURL(blob)
@@ -517,7 +547,7 @@ export default function ThreeViewer({
         aria-live="polite"
         style={{ margin: 0, color: status.state === 'error' ? '#fca5a5' : status.state === 'ready' && status.downsampled ? '#fde68a' : '#bfdbfe' }}
       >
-        {status.message}
+        {translate(language, status.messageKey, status.variables)}
       </p>
 
       {status.state === 'error' && (

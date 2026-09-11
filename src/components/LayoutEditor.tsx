@@ -11,6 +11,8 @@ interface LayoutEditorProps {
   viaMeasurement?: SimulationMetrics['viaAreaCells']
 }
 
+type LayoutDrag = { pointerId: number } & ({ kind: 'cut' } | { kind: 'vertex'; featureId: string; vertex: number })
+
 const ROLE_COLOR: Record<LayoutRole, string> = {
   opening: '#67dfc9',
   via: '#ef8d74',
@@ -53,7 +55,7 @@ function createFeature(role: LayoutRole): LayoutFeature {
 export function LayoutEditor({ layout, language, onChange, grid, viaMeasurement }: LayoutEditorProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [selectedId, setSelectedId] = useState<string | null>(layout.features[0]?.id ?? null)
-  const [drag, setDrag] = useState<{ kind: 'cut' } | { kind: 'vertex'; featureId: string; vertex: number } | null>(null)
+  const [drag, setDrag] = useState<LayoutDrag | null>(null)
 
   const selected = useMemo(() => layout.features.find((feature) => feature.id === selectedId), [layout.features, selectedId])
   const landedSet = useMemo(() => new Set(viaMeasurement?.landedIndices ?? []), [viaMeasurement])
@@ -68,15 +70,24 @@ export function LayoutEditor({ layout, language, onChange, grid, viaMeasurement 
     }).join('')
   }
 
-  const pointFromEvent = (event: ReactPointerEvent<SVGSVGElement>): Point2D => {
-    const bounds = svgRef.current?.getBoundingClientRect()
-    if (!bounds) return { x: 0.5, y: 0.5 }
-    return { x: clamp((event.clientX - bounds.left) / bounds.width), y: clamp((event.clientY - bounds.top) / bounds.height) }
+  const pointFromEvent = (event: ReactPointerEvent<SVGSVGElement>): Point2D | null => {
+    const svg = svgRef.current
+    const matrix = svg?.getScreenCTM()
+    if (!svg || !matrix || matrix.a * matrix.d - matrix.b * matrix.c === 0) return null
+    // The square viewBox is letterboxed inside the wider CSS viewport. Its
+    // inverse screen transform also accounts for scrolling and CSS scaling.
+    const point = svg.createSVGPoint()
+    point.x = event.clientX
+    point.y = event.clientY
+    const local = point.matrixTransform(matrix.inverse())
+    if (!Number.isFinite(local.x) || !Number.isFinite(local.y)) return null
+    return { x: clamp(local.x / 100), y: clamp(local.y / 100) }
   }
 
   const handlePointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
-    if (!drag) return
+    if (!drag || event.pointerId !== drag.pointerId) return
     const point = pointFromEvent(event)
+    if (!point) return
     if (drag.kind === 'cut') {
       onChange({ ...layout, cutPosition: point.y })
       return
@@ -87,6 +98,14 @@ export function LayoutEditor({ layout, language, onChange, grid, viaMeasurement 
         ? { ...feature, points: feature.points.map((candidate, index) => index === drag.vertex ? point : candidate) }
         : feature),
     })
+  }
+
+  const endDrag = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (!drag || event.pointerId !== drag.pointerId) return
+    setDrag(null)
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
   }
 
   const addFeature = (role: LayoutRole) => {
@@ -125,8 +144,9 @@ export function LayoutEditor({ layout, language, onChange, grid, viaMeasurement 
           role="img"
           aria-label={translate(language, 'editableLayout')}
           onPointerMove={handlePointerMove}
-          onPointerUp={() => setDrag(null)}
-          onPointerLeave={() => setDrag(null)}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          onLostPointerCapture={endDrag}
         >
           <defs>
             <pattern id="layout-grid" width="10" height="10" patternUnits="userSpaceOnUse">
@@ -155,8 +175,9 @@ export function LayoutEditor({ layout, language, onChange, grid, viaMeasurement 
                   strokeWidth=".6"
                   onPointerDown={(event) => {
                     event.stopPropagation()
-                    event.currentTarget.setPointerCapture(event.pointerId)
-                    setDrag({ kind: 'vertex', featureId: feature.id, vertex: index })
+                    if (drag || !event.isPrimary || event.button !== 0) return
+                    svgRef.current?.setPointerCapture(event.pointerId)
+                    setDrag({ kind: 'vertex', featureId: feature.id, vertex: index, pointerId: event.pointerId })
                   }}
                 />
               ))}
@@ -171,8 +192,9 @@ export function LayoutEditor({ layout, language, onChange, grid, viaMeasurement 
           <g
             className="cut-line-group"
             onPointerDown={(event) => {
-              event.currentTarget.setPointerCapture(event.pointerId)
-              setDrag({ kind: 'cut' })
+              if (drag || !event.isPrimary || event.button !== 0) return
+              svgRef.current?.setPointerCapture(event.pointerId)
+              setDrag({ kind: 'cut', pointerId: event.pointerId })
             }}
           >
             <line x1="0" x2="100" y1={layout.cutPosition * 100} y2={layout.cutPosition * 100} stroke="#f4d97a" strokeWidth="1" strokeDasharray="3 2" />

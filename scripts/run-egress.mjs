@@ -314,6 +314,7 @@ try {
   const downloadedFlow = await download
   const downloadedPath = await downloadedFlow.path()
   if (!downloadedPath) throw new Error('The browser did not provide the exported JSON path.')
+  page.once('dialog', async (dialog) => dialog.accept())
   await page.locator('input[type="file"]').setInputFiles({
     name: downloadedFlow.suggestedFilename(),
     mimeType: 'application/json',
@@ -346,6 +347,7 @@ try {
   await savedStack.getByRole('button', { name: 'Rename' }).click()
   const renamedStack = page.locator('.saved-stack-list article').filter({ hasText: 'Runtime renamed stack' })
   await renamedStack.waitFor()
+  page.once('dialog', async (dialog) => dialog.accept())
   await renamedStack.getByRole('button', { name: 'Open' }).click()
   await page.getByRole('heading', { name: 'Runtime renamed stack', level: 1 }).waitFor()
   await page.getByRole('button', { name: /Stacks/ }).click()

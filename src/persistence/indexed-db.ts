@@ -114,10 +114,12 @@ export async function renameSavedStack(id: string, name: string): Promise<void> 
 }
 
 function asLastSessionRecord(value: unknown): LastSessionRecord | null {
-  if (!value) return null
+  if (value === undefined) return null
   if (typeof value === 'object' && value !== null && (value as { kind?: unknown }).kind === 'film-stack-last-session') {
     const candidate = value as Partial<LastSessionRecord>
-    if (candidate.version !== 1 || !Number.isInteger(candidate.revision) || (candidate.revision ?? -1) < 1) return null
+    if (candidate.version !== 1 || !Number.isInteger(candidate.revision) || (candidate.revision ?? -1) < 1) {
+      throw new Error('The stored draft record is invalid. It was not overwritten.')
+    }
     const document = validateFlowDocument(candidate.document)
     return {
       kind: 'film-stack-last-session',
@@ -173,8 +175,6 @@ export async function getLastSessionRecord(): Promise<LastSessionRecord | null> 
     const transaction = database.transaction(META_STORE, 'readonly')
     const value = await requestResult(transaction.objectStore(META_STORE).get(LAST_SESSION_KEY))
     return asLastSessionRecord(value)
-  } catch {
-    return null
   } finally {
     database.close()
   }

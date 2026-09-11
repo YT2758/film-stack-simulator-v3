@@ -6,6 +6,7 @@ const systemChrome = [
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   '/Applications/Chromium.app/Contents/MacOS/Chromium',
 ].find((candidate): candidate is string => Boolean(candidate && existsSync(candidate)))
+const deployedOrigin = process.env.PLAYWRIGHT_BASE_URL
 
 export default defineConfig({
   testDir: './e2e',
@@ -14,12 +15,12 @@ export default defineConfig({
   timeout: 30_000,
   expect: { timeout: 10_000 },
   use: {
-    baseURL: 'http://127.0.0.1:4174',
+    baseURL: deployedOrigin || 'http://127.0.0.1:4174',
     launchOptions: systemChrome ? { executablePath: systemChrome } : {},
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
   },
-  webServer: {
+  webServer: deployedOrigin ? undefined : {
     command: 'npm run preview -- --host 127.0.0.1 --port 4174',
     url: 'http://127.0.0.1:4174',
     reuseExistingServer: false,

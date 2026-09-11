@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { deflate } from 'pako'
 import { createBlankFlow } from '../src/domain/defaults'
 import { decodeFlowFragment, encodeFlowFragment } from '../src/persistence/share-codec'
 import { parseFlowJson, stringifyFlow, validateFlowDocument } from '../src/persistence/flow-codec'
@@ -72,9 +73,17 @@ describe('URL fragment sharing', () => {
   it('rejects a highly compressible fragment that expands past the output limit', () => {
     const document = createBlankFlow()
     document.description = 'A'.repeat(5_000_000)
-    const fragment = encodeFlowFragment(document)
+    // Construct untrusted input directly; the encoder now refuses to create it.
+    const bytes = deflate(new TextEncoder().encode(stringifyFlow(document)))
+    const fragment = 'state=' + btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join('')).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '')
 
     expect(fragment.length).toBeLessThan(120_000)
     expect(() => decodeFlowFragment(fragment)).toThrow(/expands beyond the 5 MB safety limit/u)
+  })
+
+  it('never creates a link that exceeds its own decoded byte limit', () => {
+    const document = createBlankFlow()
+    document.description = '層'.repeat(1_700_000)
+    expect(() => encodeFlowFragment(document)).toThrow(/share link safety limit/u)
   })
 })

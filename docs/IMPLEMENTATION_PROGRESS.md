@@ -1,8 +1,22 @@
 # Film Stack Simulator v3 implementation progress
 
-Last updated: 2026-09-08
+Last updated: 2026-09-12
 
 This file records verified implementation state. It does not describe unfinished work as complete.
+
+## Latest deployed-site audit — 2026-09-12
+
+See [the detailed regression report](QA_2026-09-12.md) for reproduced failures, changes, test commands, and remaining manual checks. The earlier dated sections below are historical checkpoints, not claims that their original coverage was exhaustive.
+
+- Fixed language-triggered 3D teardown/blank Ready frames, camera fitting on retry, worker creation/runtime recovery, and stale first-frame callbacks.
+- Fixed SVG letterboxing coordinate errors for desktop and trusted browser touch input; fixed narrow cross-section picking and overlapping Y-axis units.
+- Blocked localStorage no longer blanks the app. Draft read failures/corruption remain explicit and cannot be treated as absent data. Fresh/unmodified external workspaces report not saved instead of false saved/pending.
+- Resume decisions block background interaction; Start fresh does not erase the previous draft until an intentional edit. Imports/named-stack replacement require confirmation, and unsaved navigation warns before leaving.
+- Named-stack read/save/rename/delete failures are handled with truthful persistent states and duplicate-submit protection.
+- Oversized shares report JSON recovery guidance; the encoder now enforces the decoder byte limit.
+- Local verification: 34 unit tests, 30 browser tests, typecheck, release build, content verification, and static/runtime zero-egress checks passed.
+- New browser tests verify real WebGL context loss, PNG pixel equality, SVG/JSON coordinate equality, draft delay/corruption/legacy v3 migration, share precedence, and actual named-stack records.
+- No new dependencies, backend, tracking, schema version, or physics model. Stage 3 teaching expansion below remains pending.
 
 ## Stage 1 — reliability and state consistency
 

@@ -54,6 +54,7 @@ function inflateWithLimit(bytes: Uint8Array): Uint8Array {
 
 export function encodeFlowFragment(document: FlowDocument): string {
   const bytes = new TextEncoder().encode(stringifyFlow(document))
+  if (bytes.byteLength > MAX_DECOMPRESSED_BYTES) throw new Error('This flow exceeds the share link safety limit. Export JSON instead.')
   const encoded = toUrlSafeBase64(deflate(bytes, { level: 9 }))
   if (encoded.length > MAX_FRAGMENT_LENGTH) throw new Error('This flow is too large for a reliable share link. Export JSON instead.')
   return `state=${encoded}`

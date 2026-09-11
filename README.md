@@ -24,6 +24,8 @@ npm run build
 npm run test:egress
 ```
 
+The latest reliability audit is documented in [docs/QA_2026-09-12.md](docs/QA_2026-09-12.md): 34 unit tests and 30 browser regressions, including actual rendered PNG pixels, real WebGL context-loss recovery, trusted browser touch input, storage failures, and draft protection. Run the same browser suite against a deployment with `PLAYWRIGHT_BASE_URL=https://film-stack-simulator-v3.pages.dev npx playwright test`; it uses isolated test-browser storage.
+
 `npm run build` also runs the static zero-egress artifact audit. By default, the runtime egress check launches a local production preview, replays all presets, imports and exports a flow, restores IndexedDB state after reload, and opens 3D. It permits only smoke-test-driven document navigations and same-origin read-only static assets whose exact paths exist in the local `dist/` artifact; it fails on every browser network API attempt (including same-origin `fetch`, XHR, WebSocket, EventSource, or beacon), non-read request, non-static dynamic request, injected asset, or cross-origin request. API attempts are retained across the smoke test's reloads. Run `npm run build` first so the comparison artifact is current.
 
 ## Privacy model

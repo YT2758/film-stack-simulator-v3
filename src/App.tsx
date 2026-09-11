@@ -60,6 +60,15 @@ function safeFilename(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 64) || 'film-stack'
 }
 
+function preferredLanguage(): Language {
+  try {
+    return window.localStorage.getItem('film-stack-language') === 'zh-TW' ? 'zh-TW' : 'en'
+  } catch {
+    // A blocked preference store must not prevent the simulator from opening.
+    return 'en'
+  }
+}
+
 function CaseStudyStrip() {
   const studies = [
     { index: '01', tag: 'PLASMA ETCH', title: 'Why deep openings etch slower', summary: 'See how transport-limited ARDE changes depth across different critical dimensions.', href: '/case-studies/arde-deep-etch-slower/' },
@@ -95,11 +104,12 @@ export default function App() {
   const [previewStepId, setPreviewStepId] = useState<string | null>(() => startup.document.steps.at(-1)?.id ?? null)
   const [playing, setPlaying] = useState(false)
   const [activeMetric, setActiveMetric] = useState<MetricKind | null>(null)
-  const [language, setLanguage] = useState<Language>(() => window.localStorage.getItem('film-stack-language') === 'zh-TW' ? 'zh-TW' : 'en')
+  const [language, setLanguage] = useState<Language>(preferredLanguage)
   const [resumeCandidate, setResumeCandidate] = useState<FlowDocument | null>(null)
   const [resumeChecked, setResumeChecked] = useState(startup.source !== 'blank')
   const [autosaveArmed, setAutosaveArmed] = useState(startup.source === 'blank')
-  const [saveStatus, setSaveStatus] = useState<AutosaveStatus>(startup.source === 'blank' ? 'checking' : 'pending')
+  const [saveStatus, setSaveStatus] = useState<AutosaveStatus>(startup.source === 'blank' ? 'checking' : 'idle')
+  const [loadingNewerDraft, setLoadingNewerDraft] = useState(false)
   const [notice, setNotice] = useState<{ message: string; tone: 'success' | 'warning' } | null>(startup.warning ? {
     message: startup.warning.kind === 'invalid-share' ? translate(language, 'invalidShare') : translate(language, 'unknownPreset', { id: startup.warning.id }),
     tone: 'warning',
@@ -120,7 +130,11 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    window.localStorage.setItem('film-stack-language', language)
+    try {
+      window.localStorage.setItem('film-stack-language', language)
+    } catch {
+      // Language still works for this tab when preference storage is unavailable.
+    }
   }, [language])
 
   useEffect(() => {
@@ -130,7 +144,12 @@ export default function App() {
       if (!active) return
       draftRevisionRef.current = record?.revision ?? null
       if (record) setResumeCandidate(record.document)
-      setSaveStatus(record ? 'pending' : 'saved')
+      setSaveStatus('idle')
+    }).catch(() => {
+      if (!active) return
+      setAutosaveArmed(false)
+      setSaveStatus('error')
+      showNotice(translate(language, 'autosaveUnavailable'), 'warning')
     }).finally(() => { if (active) setResumeChecked(true) })
     return () => { active = false }
   }, [startup.source])
@@ -174,6 +193,16 @@ export default function App() {
     return () => window.clearTimeout(timer)
   }, [playing, safeStage, flow.steps.length])
 
+  useEffect(() => {
+    if (flowGenerationRef.current === 0 || saveStatus === 'saved' || saveStatus === 'idle' || saveStatus === 'checking') return
+    const protectUnsavedWork = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', protectUnsavedWork)
+    return () => window.removeEventListener('beforeunload', protectUnsavedWork)
+  }, [flow, saveStatus])
+
   const changeFlow = useCallback((next: FlowDocument) => {
     flowGenerationRef.current += 1
     if (saveStatus !== 'conflict' && saveStatus !== 'error') {
@@ -184,7 +213,9 @@ export default function App() {
   }, [saveStatus])
 
   const replaceFlow = (next: FlowDocument, source: 'local' | 'import' = 'local') => {
+    if (!window.confirm(translate(language, 'replaceWorkWarning'))) return
     changeFlow(next)
+    setPlaying(false)
     setPreviewStepId(next.steps.at(-1)?.id ?? null)
     setSelectedStepId(null)
     setPreset(undefined)
@@ -199,7 +230,13 @@ export default function App() {
   }
 
   const copyShareLink = async () => {
-    const fragment = encodeFlowFragment(flow)
+    let fragment: string
+    try {
+      fragment = encodeFlowFragment(flow)
+    } catch {
+      showNotice(translate(language, 'shareFailed'), 'warning')
+      return
+    }
     const url = `${window.location.origin}${window.location.pathname}#${fragment}`
     try {
       await navigator.clipboard.writeText(url)
@@ -213,21 +250,33 @@ export default function App() {
   const exportCurrentWork = () => downloadText(`${safeFilename(flow.name)}.json`, stringifyFlow(flow))
 
   const loadNewerDraft = async () => {
-    if (!window.confirm(translate(language, 'replaceDraftWarning'))) return
-    const record = await getLastSessionRecord()
-    if (!record) {
-      showNotice(translate(language, 'newerDraftMissing'), 'warning')
-      return
+    if (loadingNewerDraft) return
+    setLoadingNewerDraft(true)
+    try {
+      const record = await getLastSessionRecord()
+      if (!record) {
+        showNotice(translate(language, 'newerDraftMissing'), 'warning')
+        return
+      }
+      // Ask after the read, so edits made while storage was loading are covered.
+      if (!window.confirm(translate(language, 'replaceDraftWarning'))) return
+      flowGenerationRef.current += 1
+      draftRevisionRef.current = record.revision
+      setFlow(record.document)
+      setPlaying(false)
+      setPreviewStepId(record.document.steps.at(-1)?.id ?? null)
+      setSelectedStepId(null)
+      setPreset(undefined)
+      setResumeCandidate(null)
+      setAutosaveArmed(true)
+      setSaveStatus('saved')
+      window.history.replaceState(null, '', window.location.pathname)
+      showNotice(translate(language, 'newerDraftLoaded'), 'success')
+    } catch {
+      showNotice(translate(language, 'storageUnavailable'), 'warning')
+    } finally {
+      setLoadingNewerDraft(false)
     }
-    draftRevisionRef.current = record.revision
-    setFlow(record.document)
-    setPreviewStepId(record.document.steps.at(-1)?.id ?? null)
-    setSelectedStepId(null)
-    setPreset(undefined)
-    setResumeCandidate(null)
-    setAutosaveArmed(true)
-    setSaveStatus('saved')
-    showNotice(translate(language, 'newerDraftLoaded'), 'success')
   }
 
   const retryAutosave = () => {
@@ -246,6 +295,7 @@ export default function App() {
     <div className="app" data-testid="simulator" onDragEnter={(event) => { if (event.dataTransfer.types.includes('Files')) setDraggingFile(true) }} onDragOver={(event) => event.preventDefault()} onDragLeave={(event) => { if (event.currentTarget === event.target) setDraggingFile(false) }} onDrop={(event) => {
       event.preventDefault()
       setDraggingFile(false)
+      if (resumeCandidate) return
       const file = event.dataTransfer.files[0]
       if (file) void importFile(file).catch((error) => showNotice(error instanceof Error ? error.message : translate(language, 'importFailed'), 'warning'))
     }}>
@@ -260,7 +310,7 @@ export default function App() {
         </div>
       )}
 
-      <main className="workspace">
+      <main className="workspace" inert={Boolean(resumeCandidate)}>
         <aside className="sidebar">
           <nav className="side-tabs" aria-label={translate(language, 'simulatorControls')}>
             {([
@@ -282,12 +332,12 @@ export default function App() {
               <div>
                 <button type="button" onClick={exportCurrentWork}>{translate(language, 'exportCurrentJson')}</button>
                 {saveStatus === 'conflict'
-                  ? <button type="button" onClick={() => void loadNewerDraft()}>{translate(language, 'loadNewerDraft')}</button>
+                  ? <button type="button" disabled={loadingNewerDraft} onClick={() => void loadNewerDraft()}>{translate(language, 'loadNewerDraft')}</button>
                   : <button type="button" onClick={retryAutosave}>{translate(language, 'retryAutosave')}</button>}
               </div>
             </section>
           )}
-          <div className={`sidebar-disclosure save-${saveStatus}`} role="status"><span className="status-dot" /> {translate(language, 'browserStorageOnly', { status: translate(language, saveStatus === 'checking' ? 'saveChecking' : saveStatus === 'pending' ? 'savePending' : saveStatus === 'saving' ? 'saveSaving' : saveStatus === 'saved' ? 'saveSaved' : saveStatus === 'conflict' ? 'saveConflict' : 'saveError') })}</div>
+          <div className={`sidebar-disclosure save-${saveStatus}`} role="status"><span className="status-dot" /> {translate(language, 'browserStorageOnly', { status: translate(language, saveStatus === 'checking' ? 'saveChecking' : saveStatus === 'idle' ? 'saveIdle' : saveStatus === 'pending' ? 'savePending' : saveStatus === 'saving' ? 'saveSaving' : saveStatus === 'saved' ? 'saveSaved' : saveStatus === 'conflict' ? 'saveConflict' : 'saveError') })}</div>
         </aside>
 
         <section className="stage-area">
@@ -370,7 +420,11 @@ export default function App() {
               setSaveStatus('saved')
               setPreviewStepId(resumeCandidate.steps.at(-1)?.id ?? null)
               setResumeCandidate(null)
-            }}>{translate(language, 'resume')}</button><button type="button" className="subtle-button" onClick={() => setResumeCandidate(null)}>{translate(language, 'startFresh')}</button></div>
+            }}>{translate(language, 'resume')}</button><button type="button" className="subtle-button" onClick={() => {
+              setResumeCandidate(null)
+              setAutosaveArmed(false)
+              setSaveStatus('idle')
+            }}>{translate(language, 'startFresh')}</button></div>
           </section>
         </div>
       )}

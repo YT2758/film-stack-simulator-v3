@@ -150,7 +150,8 @@ function drawCrossSection(canvas: HTMLCanvasElement, snapshot: SimulationSnapsho
     context.fillText(`${x * snapshot.cellSizeNm}`, px, pad.top + drawHeight + 20)
   }
   context.textAlign = 'right'
-  context.fillText('nm', pad.left - 11, pad.top + 4)
+  // Keep the unit in the top margin, separate from the highest Y-axis tick.
+  context.fillText('nm', pad.left - 11, pad.top - 8)
   for (let y = 0; y <= snapshot.height; y += majorCells) {
     const py = pad.top + drawHeight - y * cellHeight
     context.fillText(`${y * snapshot.cellSizeNm}`, pad.left - 10, py + 4)
@@ -176,7 +177,8 @@ export function CrossSectionCanvas({ snapshot, compareTo, embedded = false, docu
     if (!element) return
     const observer = new ResizeObserver(([entry]) => {
       const next = entry.contentRect
-      setSize({ width: Math.max(320, next.width), height: Math.max(320, next.height) })
+      // Match the CSS canvas size so fixed-pixel padding and hit testing agree.
+      setSize({ width: Math.max(1, next.width), height: Math.max(1, next.height) })
     })
     observer.observe(element)
     return () => observer.disconnect()
