@@ -15,6 +15,7 @@ See [the detailed regression report](QA_2026-09-12.md) for reproduced failures, 
 - Named-stack read/save/rename/delete failures are handled with truthful persistent states and duplicate-submit protection.
 - Oversized shares report JSON recovery guidance; the encoder now enforces the decoder byte limit.
 - Local verification: 34 unit tests, 30 browser tests, typecheck, release build, content verification, and static/runtime zero-egress checks passed.
+- Application commit `889a953` was pushed and deployed successfully. All 30 browser regressions also passed against production. Production runtime zero-egress remains **not passed** because an additional non-artifact script is present in the test Chrome's document response; its source is not established. See the detailed report before making any privacy claim or changing platform security settings.
 - New browser tests verify real WebGL context loss, PNG pixel equality, SVG/JSON coordinate equality, draft delay/corruption/legacy v3 migration, share precedence, and actual named-stack records.
 - No new dependencies, backend, tracking, schema version, or physics model. Stage 3 teaching expansion below remains pending.
 
